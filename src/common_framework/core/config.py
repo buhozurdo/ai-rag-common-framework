@@ -1,0 +1,106 @@
+"""Centralized configuration system based on pydantic-settings."""
+
+from functools import lru_cache
+from typing import Literal, Optional
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Global configuration settings for the AI RAG Common Framework."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=False,
+    )
+
+    # General framework environment
+    framework_env: Literal["development", "staging", "production", "test"] = Field(
+        default="development",
+        alias="FRAMEWORK_ENV",
+        description="Current runtime environment",
+    )
+    log_level: str = Field(
+        default="INFO",
+        alias="LOG_LEVEL",
+        description="Application logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+    )
+
+    # LLM Provider defaults
+    default_provider: Literal["gemini", "openai", "anthropic", "ollama"] = Field(
+        default="gemini",
+        alias="DEFAULT_LLM_PROVIDER",
+        description="Default LLM provider to use if none is explicitly specified",
+    )
+    default_model: str = Field(
+        default="gemini-2.5-flash",
+        alias="DEFAULT_LLM_MODEL",
+        description="Default model identifier",
+    )
+    default_temperature: float = Field(
+        default=0.7,
+        ge=0.0,
+        le=2.0,
+        alias="DEFAULT_TEMPERATURE",
+        description="Default sampling temperature for model responses",
+    )
+    default_timeout_seconds: float = Field(
+        default=60.0,
+        gt=0.0,
+        alias="DEFAULT_TIMEOUT_SECONDS",
+        description="Default HTTP timeout in seconds for LLM calls",
+    )
+    default_max_retries: int = Field(
+        default=3,
+        ge=0,
+        alias="DEFAULT_MAX_RETRIES",
+        description="Maximum retry attempts on transient network/quota failures",
+    )
+
+    # API Keys & Endpoints
+    gemini_api_key: Optional[str] = Field(
+        default=None,
+        alias="GEMINI_API_KEY",
+        description="Google Gemini / AI Studio API Key",
+    )
+    openai_api_key: Optional[str] = Field(
+        default=None,
+        alias="OPENAI_API_KEY",
+        description="OpenAI API Key",
+    )
+    openai_base_url: str = Field(
+        default="https://api.openai.com/v1",
+        alias="OPENAI_BASE_URL",
+        description="Base URL for OpenAI-compatible endpoints",
+    )
+    anthropic_api_key: Optional[str] = Field(
+        default=None,
+        alias="ANTHROPIC_API_KEY",
+        description="Anthropic API Key",
+    )
+    ollama_base_url: str = Field(
+        default="http://localhost:11434",
+        alias="OLLAMA_BASE_URL",
+        description="Base URL for Ollama local instances",
+    )
+
+    def get_api_key_for_provider(self, provider: str) -> Optional[str]:
+        """Retrieve the API key associated with a specific provider."""
+        provider_normalized = provider.lower().strip()
+        if provider_normalized == "gemini":
+            return self.gemini_api_key
+        if provider_normalized == "openai":
+            return self.openai_api_key
+        if provider_normalized == "anthropic":
+            return self.anthropic_api_key
+        if provider_normalized == "ollama":
+            return None
+        return None
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    """Return a cached instance of application settings."""
+    return Settings()
