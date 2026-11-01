@@ -8,6 +8,7 @@ from common_framework.core.exceptions import (
     LLMError,
     LLMProviderError,
     ModelNotFoundError,
+    RateLimitError,
     StructuredOutputError,
 )
 from common_framework.core.llm import (
@@ -27,6 +28,7 @@ __all__ = [
     "LLMError",
     "LLMProviderError",
     "AuthenticationError",
+    "RateLimitError",
     "ModelNotFoundError",
     "StructuredOutputError",
     "BaseLLMClient",

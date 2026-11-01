@@ -10,6 +10,7 @@ from common_framework.core.exceptions import (
     AuthenticationError,
     ConfigurationError,
     ModelNotFoundError,
+    RateLimitError,
     StructuredOutputError,
 )
 from common_framework.core.llm import (
@@ -142,6 +143,56 @@ async def test_auth_error_handling():
         with pytest.raises(AuthenticationError) as exc_info:
             await client.complete([ChatMessage(role=Role.USER, content="Test")])
         assert exc_info.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_error_handling():
+    """Verify 429 raises RateLimitError after exhausting retries."""
+    settings = Settings(DEFAULT_MAX_RETRIES=1)
+    call_count = 0
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        return httpx.Response(429, headers={"retry-after": "5"}, text="Too Many Requests")
+
+    transport = httpx.MockTransport(mock_handler)
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        client = OpenAICompatibleClient(api_key="sk-test", settings=settings, client=http_client)
+        with pytest.raises(RateLimitError) as exc_info:
+            await client.complete([ChatMessage(role=Role.USER, content="Test")])
+        assert exc_info.value.status_code == 429
+        assert exc_info.value.retry_after == 5.0
+        assert call_count == 2  # 1 initial + 1 retry
+
+
+@pytest.mark.asyncio
+async def test_retry_success_after_transient_failure():
+    """Verify client recovers on retry when first request fails with 503."""
+    settings = Settings(DEFAULT_MAX_RETRIES=2)
+    attempts = 0
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(503, text="Service Unavailable")
+        return httpx.Response(
+            200,
+            json={
+                "model": "gpt-4o-mini",
+                "choices": [{"message": {"role": "assistant", "content": "Recovered!"}}],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7},
+            },
+        )
+
+    transport = httpx.MockTransport(mock_handler)
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        client = OpenAICompatibleClient(api_key="sk-test", settings=settings, client=http_client)
+        response = await client.complete([ChatMessage(role=Role.USER, content="Test")])
+        assert response.content == "Recovered!"
+        assert attempts == 2
+
 
 
 @pytest.mark.asyncio

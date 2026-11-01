@@ -3,20 +3,20 @@
 > Un framework base modular, ultraligero y con cero código redundante para construir sistemas RAG, servidores MCP (*Model Context Protocol*) y microservicios de IA modernos.
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/Release%20Channel-v0.1.0--alpha-orange.svg)](ROADMAP.md)
+[![Version](https://img.shields.io/badge/Version-v0.1.0%20(Stable)-brightgreen.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
 
-## 🚀 Estado del Proyecto: `v0.1.0-alpha`
+## 🚀 Estado del Proyecto: `v0.1.0` (General Availability)
 
-Siguiendo nuestro modelo de **Release Train** documentado en [ROADMAP.md](ROADMAP.md), nos encontramos en el canal de desarrollo activo **`v0.1.0-alpha`** (*Foundation & Core Architecture*), sentando las bases reutilizables para los próximos proyectos.
+Siguiendo nuestro modelo de **Release Train** documentado en [ROADMAP.md](ROADMAP.md), se ha consolidado el primer release estable **`v0.1.0`** (*Foundation & Core Architecture*), proveyendo una base sólida y probada para los próximos proyectos.
 
-### Features implementadas en esta versión:
-* ⚙️ **Configuración Centralizada (`core.config`):** Tipada estrictamente con `pydantic-settings`, soporte de variables de entorno `.env` y valores por defecto inteligentes.
+### Features consolidadas en esta versión:
+* ⚙️ **Configuración Centralizada (`core.config`):** Tipada estrictamente con `pydantic-settings`, soporte de variables de entorno `.env` y resolución de credenciales multi-proveedor.
 * 🤖 **Cliente LLM Agnóstico y Unificado (`core.llm`):** Abstracción común para Gemini, OpenAI, Ollama y proveedores compatibles con la especificación OpenAI (DeepSeek, Groq, vLLM).
+* 🛡️ **Resiliencia y Reintentos Automáticos:** Manejo de reintentos exponenciales ante errores temporales (HTTP 429, 5xx, desconexiones) y excepción `RateLimitError`.
 * 🎯 **Structured Outputs Nativos:** Extracción de datos y validación garantizada en esquemas Pydantic (`structured_complete`).
-* 🛡️ **Jerarquía Estándar de Excepciones (`core.exceptions`):** Manejo uniforme de errores de autenticación, cuotas, modelos inexistentes y validación.
 * 📦 **Empaquetado Moderno:** Configuración estándar en `pyproject.toml` (PEP 517/518/621).
 
 ---

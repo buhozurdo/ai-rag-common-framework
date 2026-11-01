@@ -45,7 +45,23 @@ class AuthenticationError(LLMProviderError):
     pass
 
 
+class RateLimitError(LLMProviderError):
+    """Raised when an upstream provider returns HTTP 429 Too Many Requests or quota exceeded."""
+
+    def __init__(
+        self,
+        message: str,
+        status_code: int = 429,
+        provider: Optional[str] = None,
+        retry_after: Optional[float] = None,
+        details: Optional[dict[str, Any]] = None,
+    ) -> None:
+        super().__init__(message, status_code=status_code, provider=provider, details=details)
+        self.retry_after = retry_after
+
+
 class ModelNotFoundError(LLMProviderError):
+
     """Raised when the requested model name is not recognized or unavailable."""
     pass
 

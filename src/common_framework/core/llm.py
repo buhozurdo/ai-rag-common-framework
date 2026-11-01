@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from abc import ABC, abstractmethod
@@ -16,6 +17,7 @@ from common_framework.core.exceptions import (
     ConfigurationError,
     LLMProviderError,
     ModelNotFoundError,
+    RateLimitError,
     StructuredOutputError,
 )
 
@@ -132,6 +134,15 @@ class OpenAICompatibleClient(BaseLLMClient):
                 status_code=status,
                 provider=self.provider_name,
             ) from exc
+        if status == 429:
+            retry_header = exc.response.headers.get("retry-after")
+            retry_after = float(retry_header) if retry_header and retry_header.isdigit() else None
+            raise RateLimitError(
+                f"Rate limit exceeded for {self.provider_name}: {text}",
+                status_code=status,
+                provider=self.provider_name,
+                retry_after=retry_after,
+            ) from exc
         if status == 404:
             raise ModelNotFoundError(
                 f"Model or endpoint not found on {self.provider_name}: {text}",
@@ -165,42 +176,69 @@ class OpenAICompatibleClient(BaseLLMClient):
 
         url = f"{self.base_url}/chat/completions"
         headers = self._get_headers()
+        max_retries = self.settings.default_max_retries
 
         async def _send(http_client: httpx.AsyncClient) -> ChatResponse:
-            try:
-                response = await http_client.post(
-                    url,
-                    json=payload,
-                    headers=headers,
-                    timeout=self.settings.default_timeout_seconds,
-                )
-                response.raise_for_status()
-                data = response.json()
+            for attempt in range(max_retries + 1):
+                try:
+                    response = await http_client.post(
+                        url,
+                        json=payload,
+                        headers=headers,
+                        timeout=self.settings.default_timeout_seconds,
+                    )
+                    response.raise_for_status()
+                    data = response.json()
 
-                choice = data.get("choices", [{}])[0]
-                message = choice.get("message", {})
-                content = message.get("content", "") or ""
+                    choice = data.get("choices", [{}])[0]
+                    message = choice.get("message", {})
+                    content = message.get("content", "") or ""
 
-                usage_data = data.get("usage", {})
-                usage = TokenUsage(
-                    prompt_tokens=usage_data.get("prompt_tokens", 0),
-                    completion_tokens=usage_data.get("completion_tokens", 0),
-                    total_tokens=usage_data.get("total_tokens", 0),
-                )
+                    usage_data = data.get("usage", {})
+                    usage = TokenUsage(
+                        prompt_tokens=usage_data.get("prompt_tokens", 0),
+                        completion_tokens=usage_data.get("completion_tokens", 0),
+                        total_tokens=usage_data.get("total_tokens", 0),
+                    )
 
-                return ChatResponse(
-                    content=content,
-                    model=data.get("model", target_model),
-                    usage=usage,
-                    raw=data,
-                )
-            except httpx.HTTPStatusError as exc:
-                self._handle_http_error(exc)
-            except httpx.RequestError as exc:
-                raise LLMProviderError(
-                    f"Network error connecting to {self.provider_name}: {exc}",
-                    provider=self.provider_name,
-                ) from exc
+                    return ChatResponse(
+                        content=content,
+                        model=data.get("model", target_model),
+                        usage=usage,
+                        raw=data,
+                    )
+                except httpx.HTTPStatusError as exc:
+                    if exc.response.status_code in (429, 500, 502, 503, 504) and attempt < max_retries:
+                        backoff = 0.2 * (2 ** attempt)
+                        logger.warning(
+                            "Transient HTTP %s from %s. Retrying in %.2fs (attempt %d/%d)...",
+                            exc.response.status_code,
+                            self.provider_name,
+                            backoff,
+                            attempt + 1,
+                            max_retries,
+                        )
+                        await asyncio.sleep(backoff)
+                        continue
+                    self._handle_http_error(exc)
+                except httpx.RequestError as exc:
+                    if attempt < max_retries:
+                        backoff = 0.2 * (2 ** attempt)
+                        logger.warning(
+                            "Network connection error with %s: %s. Retrying in %.2fs (attempt %d/%d)...",
+                            self.provider_name,
+                            exc,
+                            backoff,
+                            attempt + 1,
+                            max_retries,
+                        )
+                        await asyncio.sleep(backoff)
+                        continue
+                    raise LLMProviderError(
+                        f"Network error connecting to {self.provider_name}: {exc}",
+                        provider=self.provider_name,
+                    ) from exc
+            raise LLMProviderError(f"Exceeded max retries ({max_retries}) connecting to {self.provider_name}")
 
         if self._external_client:
             return await _send(self._external_client)

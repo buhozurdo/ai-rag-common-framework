@@ -7,6 +7,7 @@ from common_framework.core.exceptions import (
     LLMError,
     LLMProviderError,
     ModelNotFoundError,
+    RateLimitError,
     StructuredOutputError,
 )
 
@@ -17,6 +18,7 @@ def test_exception_inheritance():
     assert issubclass(LLMError, FrameworkError)
     assert issubclass(LLMProviderError, LLMError)
     assert issubclass(AuthenticationError, LLMProviderError)
+    assert issubclass(RateLimitError, LLMProviderError)
     assert issubclass(ModelNotFoundError, LLMProviderError)
     assert issubclass(StructuredOutputError, LLMError)
 

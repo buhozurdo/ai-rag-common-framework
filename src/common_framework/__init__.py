@@ -13,6 +13,7 @@ from common_framework.core.exceptions import (
     LLMError,
     LLMProviderError,
     ModelNotFoundError,
+    RateLimitError,
     StructuredOutputError,
 )
 from common_framework.core.llm import (
@@ -24,7 +25,7 @@ from common_framework.core.llm import (
     TokenUsage,
 )
 
-__version__ = "0.1.0-alpha"
+__version__ = "0.1.0"
 
 __all__ = [
     "__version__",
@@ -35,6 +36,7 @@ __all__ = [
     "LLMError",
     "LLMProviderError",
     "AuthenticationError",
+    "RateLimitError",
     "ModelNotFoundError",
     "StructuredOutputError",
     "BaseLLMClient",
