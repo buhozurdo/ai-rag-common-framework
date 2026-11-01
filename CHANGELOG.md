@@ -6,6 +6,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.2.0-alpha] - 2026-10-31
+
+### Release Title:
+### 🛠️ `v0.2.0-alpha: Tooling & MCP Engine`
+
+### Summary:
+Segunda versión en el canal de desarrollo activo **Alpha** (-4 versiones respecto al release final). Introduce el motor universal de herramientas (*Tools*) y soporte nativo del estándar **Model Context Protocol (MCP)** con capacidades de doble uso (*dual-use tools*).
+
+---
+
+### 🚀 Nuevas Características (Features):
+* **Decorador Universal `@tool` y Abstracción `Tool` (`common_framework.tools`):**
+  * Auto-generación de esquemas JSON Schema completos mediante introspección tipada con Pydantic.
+  * Invocación unificada tanto para funciones síncronas como asíncronas (`execute` y `__call__`).
+  * Validación y coerción automática de argumentos de entrada.
+  * Exportación directa al formato de Function Calling de OpenAI (`to_openai_schema`).
+* **Catálogo Centralizado de Herramientas (`ToolRegistry`):**
+  * Descubrimiento, registro dinámico y ejecución de herramientas por identificador único.
+  * Registro global singleton (`global_tool_registry`).
+* **Adaptador de Servidor MCP Nativo (`FrameworkMCPServer`):**
+  * Compatible con el estándar oficial `mcp 2.x` (`MCPServer`).
+  * **Dual-Use Tools:** Una herramienta declarada con `@tool` puede usarse directamente dentro de flujos internos de LLMs y exponerse al mismo tiempo como endpoint MCP hacia clientes externos (Cursor, Claude Desktop, Antigravity, ChatGPT).
+  * Soporte de transporte estándar **stdio** (ejecución local).
+  * Soporte de transporte **SSE** (Server-Sent Events) para acceso HTTP/remoto y montaje ASGI (`get_sse_app`).
+* **Suite de Pruebas y Ejemplos:**
+  * 8 nuevas pruebas unitarias en `test_tools.py` y `test_mcp.py` (totalizando 22 tests aprobados).
+  * Script de demostración interactivo en `examples/mcp_server_demo.py`.
+
+---
+
 ## [v0.1.0] - 2026-10-31
 
 ### Release Title:

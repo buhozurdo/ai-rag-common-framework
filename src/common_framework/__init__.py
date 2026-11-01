@@ -24,8 +24,15 @@ from common_framework.core.llm import (
     Role,
     TokenUsage,
 )
+from common_framework.mcp.server import FrameworkMCPServer, create_mcp_server
+from common_framework.tools.base import Tool, ToolExecutionError, tool
+from common_framework.tools.registry import (
+    ToolNotFoundError,
+    ToolRegistry,
+    global_tool_registry,
+)
 
-__version__ = "0.1.0"
+__version__ = "0.2.0-alpha"
 
 __all__ = [
     "__version__",
@@ -45,4 +52,12 @@ __all__ = [
     "TokenUsage",
     "Role",
     "LLMFactory",
+    "Tool",
+    "ToolExecutionError",
+    "tool",
+    "ToolRegistry",
+    "ToolNotFoundError",
+    "global_tool_registry",
+    "FrameworkMCPServer",
+    "create_mcp_server",
 ]
