@@ -3,18 +3,20 @@
 > Un framework base modular, ultraligero y con cero código redundante para construir sistemas RAG, servidores MCP (*Model Context Protocol*) y microservicios de IA modernos.
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/Version-v0.1.0%20(Stable)-brightgreen.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-v0.2.0%20(Stable)-brightgreen.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
 
-## 🚀 Estado del Proyecto: `v0.1.0` (General Availability)
+## 🚀 Estado del Proyecto: `v0.2.0` (General Availability)
 
-Siguiendo nuestro modelo de **Release Train** documentado en [ROADMAP.md](ROADMAP.md), se ha consolidado el primer release estable **`v0.1.0`** (*Foundation & Core Architecture*), proveyendo una base sólida y probada para los próximos proyectos.
+Siguiendo nuestro modelo de **Release Train** documentado en [ROADMAP.md](ROADMAP.md), se ha consolidado el release estable **`v0.2.0`** (*Tooling & MCP Engine*), permitiendo crear herramientas reutilizables y exponer servidores MCP con soporte nativo de **Tools, Resources y Prompts**.
 
 ### Features consolidadas en esta versión:
-* ⚙️ **Configuración Centralizada (`core.config`):** Tipada estrictamente con `pydantic-settings`, soporte de variables de entorno `.env` y resolución de credenciales multi-proveedor.
-* 🤖 **Cliente LLM Agnóstico y Unificado (`core.llm`):** Abstracción común para Gemini, OpenAI, Ollama y proveedores compatibles con la especificación OpenAI (DeepSeek, Groq, vLLM).
+* 🛠️ **Dual-Use Tooling Engine (`common_framework.tools`):** Decorador `@tool` con auto-generación de JSON Schema mediante Pydantic. Funciona tanto para llamadas de agentes internos como para servidores MCP externos.
+* 🌐 **Servidor MCP Nativo (`common_framework.mcp`):** Basado en el estándar oficial `mcp 2.x` (`MCPServer`), con soporte para transportes **stdio** (Cursor, Claude Desktop, Antigravity) y **SSE** (Web / HTTP / ASGI).
+* 📑 **Recursos y Prompts MCP:** Decoradores `@server.resource` y `@server.prompt` para exponer documentación, schemas y plantillas parametrizadas.
+* 🤖 **Cliente LLM Agnóstico y Unificado (`core.llm`):** Abstracción común para Gemini, OpenAI, Ollama y proveedores compatibles con OpenAI (DeepSeek, Groq, vLLM).
 * 🛡️ **Resiliencia y Reintentos Automáticos:** Manejo de reintentos exponenciales ante errores temporales (HTTP 429, 5xx, desconexiones) y excepción `RateLimitError`.
 * 🎯 **Structured Outputs Nativos:** Extracción de datos y validación garantizada en esquemas Pydantic (`structured_complete`).
 * 📦 **Empaquetado Moderno:** Configuración estándar en `pyproject.toml` (PEP 517/518/621).
@@ -32,7 +34,7 @@ pip install -e .
 O con dependencias opcionales de desarrollo y testing:
 
 ```bash
-pip install -e ".[test]"
+pip install -e ".[test,mcp]"
 ```
 
 ---
@@ -65,7 +67,6 @@ import asyncio
 from common_framework import LLMFactory, ChatMessage, Role
 
 async def main():
-    # Instancia automáticamente el cliente configurado en el entorno
     client = LLMFactory.create()
 
     messages = [
@@ -116,6 +117,26 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
+### 3. Servidor MCP con Herramientas de Doble Uso (Dual-Use Tools)
+
+```python
+from common_framework import create_mcp_server, tool
+
+# Declarar una herramienta universal
+@tool(name="calculate_discount", description="Calculates final price after discount percentage.")
+def calculate_discount(price: float, discount_pct: float) -> dict[str, float]:
+    savings = round(price * (discount_pct / 100), 2)
+    return {"final_price": price - savings, "savings": savings}
+
+# Crear el servidor MCP
+server = create_mcp_server(name="pricing-service", version="0.2.0")
+server.add_tool(calculate_discount)
+
+# Ejecución:
+# server.run_stdio()       # Para Cursor / Claude Desktop / Antigravity
+# server.run_sse(port=8000) # Para acceso HTTP / Webhooks
+```
+
 ---
 
 ## 🧪 Ejecución de Tests
@@ -129,6 +150,6 @@ python -m pytest -v
 ## 🗺️ Próximas Versiones en el Release Train
 
 Consulta el detalle completo en [ROADMAP.md](ROADMAP.md).
-* **`v0.2.0-alpha`**: *Tooling & MCP Engine* (decorador `@tool`, servidor Model Context Protocol sobre transportes stdio y SSE).
-* **`v0.3.0-alpha`**: *Modular RAG Core* (Vector Stores, Embeddings, Splitters).
+* **`v0.3.0-alpha`**: *Modular RAG Core* (Vector Stores, Embeddings, Splitters, Retrieval Pipeline).
 * **`v0.4.0-alpha`**: *FastAPI Service & Hybrid Endpoints*.
+* **`v0.5.0-alpha`**: *Autonomous Agents & Workflows*.

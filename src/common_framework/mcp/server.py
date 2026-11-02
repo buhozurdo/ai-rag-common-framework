@@ -94,9 +94,44 @@ class FrameworkMCPServer:
                 description=t.description,
             )
 
+    def resource(
+        self,
+        uri: str,
+        *,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        mime_type: Optional[str] = None,
+    ) -> Any:
+        """Decorator to register an MCP Resource."""
+        return self.underlying_server.resource(
+            uri=uri,
+            name=name,
+            description=description,
+            mime_type=mime_type,
+        )
+
+    def prompt(
+        self,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+    ) -> Any:
+        """Decorator to register an MCP Prompt template."""
+        return self.underlying_server.prompt(
+            name=name,
+            description=description,
+        )
+
     async def list_tools(self) -> list[Any]:
         """List all tools exposed by the MCP server."""
         return await self.underlying_server.list_tools()
+
+    async def list_resources(self) -> list[Any]:
+        """List all resources exposed by the MCP server."""
+        return await self.underlying_server.list_resources()
+
+    async def list_prompts(self) -> list[Any]:
+        """List all prompt templates exposed by the MCP server."""
+        return await self.underlying_server.list_prompts()
 
     def run_stdio(self) -> None:
         """Run the MCP server over standard I/O (blocking). Ideal for Cursor, Claude Desktop, Antigravity."""

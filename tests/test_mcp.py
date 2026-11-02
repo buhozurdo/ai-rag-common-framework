@@ -46,3 +46,25 @@ def test_mcp_server_sse_app_creation():
     server = create_mcp_server(name="web-mcp-server")
     app = server.get_sse_app()
     assert app is not None
+
+
+@pytest.mark.asyncio
+async def test_mcp_server_resource_and_prompt():
+    """Verify MCP Resource and Prompt registration and listing."""
+    server = create_mcp_server(name="full-mcp-server")
+
+    @server.resource("docs://readme", name="readme_doc", description="System readme")
+    def get_readme() -> str:
+        return "Framework Documentation"
+
+    @server.prompt(name="greet_user", description="Prompt to greet a user")
+    def greet_user(name: str) -> str:
+        return f"Hello {name}, welcome to the framework!"
+
+    resources = await server.list_resources()
+    resource_uris = [str(r.uri) for r in resources]
+    assert "docs://readme" in resource_uris
+
+    prompts = await server.list_prompts()
+    prompt_names = [p.name for p in prompts]
+    assert "greet_user" in prompt_names

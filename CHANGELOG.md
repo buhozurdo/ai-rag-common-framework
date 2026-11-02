@@ -6,6 +6,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.2.0] - 2026-11-02
+
+### Release Title:
+### ⚡ `v0.2.0: Tooling & MCP Engine (General Availability)`
+
+### Summary:
+Segundo release estable (GA) del framework. Consolida el ecosistema completo de herramientas (*Tools*) y el estándar oficial **Model Context Protocol (MCP)**, abarcando **Tools, Resources y Prompts**. Permite la creación de servicios de IA extensibles con soporte de ejecución local (**stdio**) y remota (**SSE/ASGI**).
+
+---
+
+### 🌟 Hitos y Características Consolidadas:
+* **Tríada Completa de Model Context Protocol (MCP 2.x):**
+  * **Tools:** Registro universal con `@server.tool` y soporte de *dual-use tools*.
+  * **Resources:** Decorador `@server.resource` para exponer documentación, schemas y datos estructurados.
+  * **Prompts:** Decorador `@server.prompt` para exponer plantillas de instrucciones parametrizadas.
+* **Dual-Use Tooling Engine (`common_framework.tools`):**
+  * Una sola función Python con tipado estándar genera automáticamente el JSON Schema compatible con OpenAI y MCP sin librerías externas.
+  * Invocación agnóstica para funciones síncronas y asíncronas con validación estricta de parámetros en tiempo de ejecución.
+  * `ToolRegistry` global y desacoplado para orquestación en agentes internos.
+* **Transportes de Producción:**
+  * Soporte nativo para transporte **stdio** (Cursor, Claude Desktop, Antigravity).
+  * Transporte **SSE** (Server-Sent Events) con aplicación ASGI lista para embeber en FastAPI/Starlette.
+* **Calidad y Cobertura:**
+  * 23 pruebas unitarias aprobadas al 100%.
+
+---
+
+## [v0.2.0-beta] - 2026-11-02
+
+### Release Title:
+### 🛡️ `v0.2.0-beta: Full MCP Spectrum (Tools, Prompts & Resources)`
+
+### Summary:
+Fase Beta de estabilización de la versión `0.2.0`. Amplía la integración con la especificación `mcp 2.x` añadiendo soporte nativo para Resources y Prompts, complementando el motor de Tools.
+
+---
+
+### 🔧 Mejoras y Ajustes (Improvements & Fixes):
+* **Soporte de Resources en MCP:** Método decorador `@server.resource(uri=...)` y listado asíncrono `list_resources()`.
+* **Soporte de Prompts en MCP:** Método decorador `@server.prompt(name=...)` y listado asíncrono `list_prompts()`.
+* **Pruebas de Integración:** Verificación de registro y descubrimiento de recursos y plantillas de prompts (`test_mcp_server_resource_and_prompt`).
+
+---
+
 ## [v0.2.0-alpha] - 2026-10-31
 
 ### Release Title:
