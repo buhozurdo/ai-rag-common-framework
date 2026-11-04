@@ -6,6 +6,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.3.0-alpha] - 2026-11-04
+
+### Release Title:
+### 🧠 `v0.3.0-alpha: Modular RAG Core`
+
+### Summary:
+Tercera versión en el canal de desarrollo activo **Alpha** (-4 versiones respecto al release de producción). Introduce el motor de Retrieval-Augmented Generation (RAG) desacoplado, modular y de alto rendimiento, con soporte para fragmentación semántica recursiva, almacenamiento vectorial en memoria y exportación automática a herramientas MCP.
+
+---
+
+### 🚀 Nuevas Características (Features):
+* **Modelos Centrales de RAG (`common_framework.rag.models`):**
+  * `Document`: estructura enriquecida con identificador único UUID, contenido textual, metadatos estructurados y vector denso `embedding`.
+  * `SearchResult`: contenedor de coincidencia con puntuación de similitud coseno normalizada (`score`).
+  * `RAGResponse`: resultado sintetizado que incluye respuesta del LLM, fuentes citadas y métricas de consumo de tokens.
+* **Estrategias de Chunking y Splitting (`common_framework.rag.splitters`):**
+  * `CharacterTextSplitter`: particionado basado en delimitadores fijos respetando tamaños máximos.
+  * `RecursiveTextSplitter`: particionado jerárquico inteligente por saltos de párrafo (`\n\n`), saltos de línea (`\n`) y espacios (` `), preservando contexto y trazabilidad con metadatos `parent_id` y `chunk_index`.
+* **Abstracción de Embeddings (`common_framework.rag.embeddings`):**
+  * `BaseEmbeddingProvider`: contrato asíncrono para vectorización de queries y documentos.
+  * `MockEmbeddingProvider`: generador de vectores normalizados deterministas para pruebas unitarias y desarrollo local sin consumo de cuotas.
+  * `OpenAICompatibleEmbeddingProvider`: soporte para OpenAI (`text-embedding-3-small`), Ollama (`nomic-embed-text`) y Gemini (`text-embedding-004`).
+  * `EmbeddingFactory`: factoría para instanciación dinámica.
+* **Vector Store en Memoria (`common_framework.rag.vectorstore`):**
+  * `InMemoryVectorStore`: base de datos vectorial ultrarrápida en Python puro con cálculo de similitud coseno ($O(N)$), sin dependencias externas complejas.
+  * Operaciones `add_documents`, `similarity_search`, `delete`, `count` y `clear`.
+* **Orquestador RAG y Conexión MCP (`common_framework.rag.engine`):**
+  * `RAGEngine`: orquestación de ingesta, fragmentación, generación de embeddings y síntesis con LLM.
+  * **MCP Tool Export (`as_tool`):** Capacidad de convertir cualquier pipeline RAG en una herramienta reutilizable (`Tool`) compatible con servidores MCP y flujos de agentes con una sola llamada (`engine.as_tool(...)`).
+* **Pruebas y Demostración:**
+  * 7 nuevas pruebas unitarias en `tests/test_rag.py` (totalizando 30 tests aprobados al 100%).
+  * Script interactivo en `examples/simple_rag_demo.py`.
+
+---
+
 ## [v0.2.0] - 2026-11-02
 
 ### Release Title:

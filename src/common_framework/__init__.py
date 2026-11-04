@@ -25,6 +25,24 @@ from common_framework.core.llm import (
     TokenUsage,
 )
 from common_framework.mcp.server import FrameworkMCPServer, create_mcp_server
+from common_framework.rag.embeddings import (
+    BaseEmbeddingProvider,
+    EmbeddingFactory,
+    MockEmbeddingProvider,
+    OpenAICompatibleEmbeddingProvider,
+)
+from common_framework.rag.engine import RAGEngine
+from common_framework.rag.models import Document, RAGResponse, SearchResult
+from common_framework.rag.splitters import (
+    BaseTextSplitter,
+    CharacterTextSplitter,
+    RecursiveTextSplitter,
+)
+from common_framework.rag.vectorstore import (
+    BaseVectorStore,
+    InMemoryVectorStore,
+    cosine_similarity,
+)
 from common_framework.tools.base import Tool, ToolExecutionError, tool
 from common_framework.tools.registry import (
     ToolNotFoundError,
@@ -32,7 +50,7 @@ from common_framework.tools.registry import (
     global_tool_registry,
 )
 
-__version__ = "0.2.0"
+__version__ = "0.3.0-alpha"
 
 __all__ = [
     "__version__",
@@ -60,4 +78,18 @@ __all__ = [
     "global_tool_registry",
     "FrameworkMCPServer",
     "create_mcp_server",
+    "Document",
+    "SearchResult",
+    "RAGResponse",
+    "BaseTextSplitter",
+    "CharacterTextSplitter",
+    "RecursiveTextSplitter",
+    "BaseEmbeddingProvider",
+    "MockEmbeddingProvider",
+    "OpenAICompatibleEmbeddingProvider",
+    "EmbeddingFactory",
+    "BaseVectorStore",
+    "InMemoryVectorStore",
+    "cosine_similarity",
+    "RAGEngine",
 ]
