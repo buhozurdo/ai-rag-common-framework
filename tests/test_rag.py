@@ -165,3 +165,49 @@ async def test_rag_engine_as_tool_and_mcp_integration():
 
     mcp_tools = await mcp_server.list_tools()
     assert "kb_search" in [t.name for t in mcp_tools]
+
+
+def test_dimension_mismatch_validation():
+    """Verify ValueError is raised on embedding dimension mismatch."""
+    with pytest.raises(ValueError, match="Vector dimension mismatch"):
+        cosine_similarity([1.0, 0.0], [1.0, 0.0, 0.5])
+
+
+@pytest.mark.asyncio
+async def test_vectorstore_metadata_filtering():
+    """Verify vector search filters results accurately using metadata."""
+    store = InMemoryVectorStore()
+    doc1 = Document(id="d1", content="Python docs", metadata={"lang": "python", "version": 3}, embedding=[1.0, 0.0])
+    doc2 = Document(id="d2", content="Rust docs", metadata={"lang": "rust", "version": 1}, embedding=[0.9, 0.1])
+    await store.add_documents([doc1, doc2])
+
+    # Search with matching filter
+    results_py = await store.similarity_search([1.0, 0.0], top_k=2, filter_metadata={"lang": "python"})
+    assert len(results_py) == 1
+    assert results_py[0].document.id == "d1"
+
+    # Search with non-matching filter
+    results_empty = await store.similarity_search([1.0, 0.0], top_k=2, filter_metadata={"lang": "go"})
+    assert len(results_empty) == 0
+
+
+@pytest.mark.asyncio
+async def test_vectorstore_json_save_and_load(tmp_path):
+    """Verify saving and loading vector store to/from JSON."""
+    store = InMemoryVectorStore()
+    doc = Document(id="persist-1", content="Persistent doc", metadata={"author": "BuhoZurdo"}, embedding=[0.5, 0.5])
+    await store.add_documents([doc])
+
+    filepath = tmp_path / "vectorstore.json"
+    store.save_to_json(filepath)
+    assert filepath.exists()
+
+    new_store = InMemoryVectorStore()
+    count = new_store.load_from_json(filepath)
+    assert count == 1
+    loaded_doc = new_store.get("persist-1")
+    assert loaded_doc is not None
+    assert loaded_doc.content == "Persistent doc"
+    assert loaded_doc.metadata["author"] == "BuhoZurdo"
+    assert loaded_doc.embedding == [0.5, 0.5]
+
