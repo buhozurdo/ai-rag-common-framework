@@ -24,6 +24,7 @@ from common_framework.core.llm import (
     Role,
     TokenUsage,
 )
+from common_framework.api.app import create_app
 from common_framework.mcp.server import FrameworkMCPServer, create_mcp_server
 from common_framework.rag.bm25 import BM25Index, reciprocal_rank_fusion, tokenize
 from common_framework.rag.embeddings import (
@@ -79,6 +80,7 @@ __all__ = [
     "global_tool_registry",
     "FrameworkMCPServer",
     "create_mcp_server",
+    "create_app",
     "Document",
     "SearchResult",
     "RAGResponse",
