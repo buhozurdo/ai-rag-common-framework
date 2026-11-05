@@ -1,4 +1,4 @@
-"""Vector store abstractions and in-memory implementation."""
+"""Vector store abstractions and in-memory implementation with multi-collection isolation."""
 
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ from typing import Any, Optional, Union
 
 from common_framework.rag.bm25 import BM25Index, reciprocal_rank_fusion
 from common_framework.rag.models import Document, SearchResult
+
+DEFAULT_COLLECTION = "default"
 
 
 def cosine_similarity(v1: list[float], v2: list[float]) -> float:
@@ -33,11 +35,13 @@ def cosine_similarity(v1: list[float], v2: list[float]) -> float:
 
 
 class BaseVectorStore(ABC):
-    """Abstract interface for dense vector storage and retrieval."""
+    """Abstract interface for dense vector storage and retrieval with multi-collection support."""
 
     @abstractmethod
-    async def add_documents(self, documents: list[Document]) -> list[str]:
-        """Store documents along with their vector embeddings."""
+    async def add_documents(
+        self, documents: list[Document], collection: str = DEFAULT_COLLECTION
+    ) -> list[str]:
+        """Store documents along with their vector embeddings into a specific collection."""
         pass
 
     @abstractmethod
@@ -45,9 +49,10 @@ class BaseVectorStore(ABC):
         self,
         query_embedding: list[float],
         top_k: int = 4,
+        collection: str = DEFAULT_COLLECTION,
         filter_metadata: Optional[dict[str, Any]] = None,
     ) -> list[SearchResult]:
-        """Retrieve the top_k most similar documents to the query vector with optional metadata filtering."""
+        """Retrieve top_k similar documents from a collection with optional metadata filtering."""
         pass
 
     @abstractmethod
@@ -56,53 +61,81 @@ class BaseVectorStore(ABC):
         query_text: str,
         query_embedding: list[float],
         top_k: int = 4,
+        collection: str = DEFAULT_COLLECTION,
         dense_weight: float = 0.5,
         sparse_weight: float = 0.5,
         filter_metadata: Optional[dict[str, Any]] = None,
     ) -> list[SearchResult]:
-        """Perform hybrid search combining dense vector similarity with sparse BM25 keyword matching via RRF."""
+        """Perform hybrid search combining dense similarity with sparse BM25 keyword matching via RRF."""
         pass
 
     @abstractmethod
-    async def delete(self, document_ids: list[str]) -> None:
-        """Remove documents by their identifiers."""
+    async def delete(
+        self, document_ids: list[str], collection: str = DEFAULT_COLLECTION
+    ) -> None:
+        """Remove documents by their identifiers from a collection."""
         pass
 
     @abstractmethod
-    async def count(self) -> int:
-        """Return total number of documents stored."""
+    async def delete_collection(self, collection: str) -> None:
+        """Drop an entire collection and its vector index."""
+        pass
+
+    @abstractmethod
+    async def list_collections(self) -> list[str]:
+        """List all collection names currently stored."""
+        pass
+
+    @abstractmethod
+    async def count(self, collection: Optional[str] = None) -> int:
+        """Return number of documents in a collection, or total across all collections if None."""
         pass
 
 
 class InMemoryVectorStore(BaseVectorStore):
-    """High-performance, pure-Python in-memory vector store with native hybrid BM25 search."""
+    """High-performance, pure-Python in-memory vector store with multi-collection isolation and hybrid search."""
 
     def __init__(self) -> None:
-        self._documents: dict[str, Document] = {}
-        self._bm25 = BM25Index()
+        # Partitioned storage: collection_name -> (doc_id -> Document)
+        self._collections: dict[str, dict[str, Document]] = {}
+        # Partitioned BM25 index: collection_name -> BM25Index
+        self._bm25_indexes: dict[str, BM25Index] = {}
 
-    async def add_documents(self, documents: list[Document]) -> list[str]:
+    def _ensure_collection(self, collection: str) -> tuple[dict[str, Document], BM25Index]:
+        if collection not in self._collections:
+            self._collections[collection] = {}
+            self._bm25_indexes[collection] = BM25Index()
+        return self._collections[collection], self._bm25_indexes[collection]
+
+    async def add_documents(
+        self, documents: list[Document], collection: str = DEFAULT_COLLECTION
+    ) -> list[str]:
+        doc_store, bm25 = self._ensure_collection(collection)
         added_ids: list[str] = []
+
         for doc in documents:
             if doc.embedding is None:
                 raise ValueError(f"Document {doc.id!r} has no embedding. Generate embeddings before adding.")
-            self._documents[doc.id] = doc
+            doc_store[doc.id] = doc
             added_ids.append(doc.id)
 
-        self._bm25.add_documents(documents)
+        bm25.add_documents(documents)
         return added_ids
 
     async def similarity_search(
         self,
         query_embedding: list[float],
         top_k: int = 4,
+        collection: str = DEFAULT_COLLECTION,
         filter_metadata: Optional[dict[str, Any]] = None,
     ) -> list[SearchResult]:
-        if not self._documents or not query_embedding:
+        if collection not in self._collections or not query_embedding:
             return []
 
+        doc_store = self._collections[collection]
         scored: list[SearchResult] = []
-        for doc in self._documents.values():
+
+        for doc in doc_store.values():
             if filter_metadata:
                 matches = all(doc.metadata.get(k) == v for k, v in filter_metadata.items())
                 if not matches:
@@ -120,20 +153,24 @@ class InMemoryVectorStore(BaseVectorStore):
         query_text: str,
         query_embedding: list[float],
         top_k: int = 4,
+        collection: str = DEFAULT_COLLECTION,
         dense_weight: float = 0.5,
         sparse_weight: float = 0.5,
         filter_metadata: Optional[dict[str, Any]] = None,
     ) -> list[SearchResult]:
-        """Combine dense cosine similarity and sparse BM25 scoring using Reciprocal Rank Fusion (RRF)."""
+        if collection not in self._collections:
+            return []
+
         candidate_count = top_k * 3
 
         dense_results = await self.similarity_search(
             query_embedding=query_embedding,
             top_k=candidate_count,
+            collection=collection,
             filter_metadata=filter_metadata,
         )
 
-        sparse_results = self._bm25.search(
+        sparse_results = self._bm25_indexes[collection].search(
             query=query_text,
             top_k=candidate_count,
             filter_metadata=filter_metadata,
@@ -148,33 +185,50 @@ class InMemoryVectorStore(BaseVectorStore):
             top_k=top_k,
         )
 
-    async def delete(self, document_ids: list[str]) -> None:
-        for doc_id in document_ids:
-            self._documents.pop(doc_id, None)
-        self._bm25.delete(document_ids)
+    async def delete(
+        self, document_ids: list[str], collection: str = DEFAULT_COLLECTION
+    ) -> None:
+        if collection in self._collections:
+            doc_store = self._collections[collection]
+            for doc_id in document_ids:
+                doc_store.pop(doc_id, None)
+            self._bm25_indexes[collection].delete(document_ids)
 
-    async def count(self) -> int:
-        return len(self._documents)
+    async def delete_collection(self, collection: str) -> None:
+        self._collections.pop(collection, None)
+        self._bm25_indexes.pop(collection, None)
 
-    def get(self, document_id: str) -> Optional[Document]:
-        """Retrieve a specific document by its ID."""
-        return self._documents.get(document_id)
+    async def list_collections(self) -> list[str]:
+        return list(self._collections.keys())
+
+    async def count(self, collection: Optional[str] = None) -> int:
+        if collection is not None:
+            return len(self._collections.get(collection, {}))
+        return sum(len(docs) for docs in self._collections.values())
+
+    def get(self, document_id: str, collection: str = DEFAULT_COLLECTION) -> Optional[Document]:
+        """Retrieve a specific document by its ID within a collection."""
+        return self._collections.get(collection, {}).get(document_id)
 
     def clear(self) -> None:
-        """Remove all documents from memory."""
-        self._documents.clear()
-        self._bm25 = BM25Index()
+        """Remove all collections and documents from memory."""
+        self._collections.clear()
+        self._bm25_indexes.clear()
 
     def save_to_json(self, filepath: Union[str, Path]) -> None:
-        """Serialize documents and embeddings to a local JSON file."""
+        """Serialize all collections, documents, and embeddings to a local JSON file."""
         target_path = Path(filepath)
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        data = [doc.model_dump() for doc in self._documents.values()]
+        serialized: dict[str, list[dict[str, Any]]] = {}
+
+        for coll_name, docs in self._collections.items():
+            serialized[coll_name] = [d.model_dump() for d in docs.values()]
+
         with open(target_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+            json.dump(serialized, f, indent=2, ensure_ascii=False)
 
     def load_from_json(self, filepath: Union[str, Path]) -> int:
-        """Load documents and embeddings from a local JSON file and rebuild indexes."""
+        """Load collections and documents from a local JSON file and rebuild all indexes."""
         source_path = Path(filepath)
         if not source_path.exists():
             raise FileNotFoundError(f"Vector store file not found: {source_path}")
@@ -182,12 +236,24 @@ class InMemoryVectorStore(BaseVectorStore):
         with open(source_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        loaded_docs: list[Document] = []
-        for item in data:
-            doc = Document.model_validate(item)
-            self._documents[doc.id] = doc
-            loaded_docs.append(doc)
+        self.clear()
+        total_loaded = 0
 
-        self._bm25 = BM25Index()
-        self._bm25.add_documents(loaded_docs)
-        return len(loaded_docs)
+        # Handle both multi-collection format (dict of lists) and legacy single list
+        if isinstance(data, list):
+            doc_list = [Document.model_validate(item) for item in data]
+            store, bm25 = self._ensure_collection(DEFAULT_COLLECTION)
+            for d in doc_list:
+                store[d.id] = d
+            bm25.add_documents(doc_list)
+            total_loaded = len(doc_list)
+        elif isinstance(data, dict):
+            for coll_name, items in data.items():
+                doc_list = [Document.model_validate(item) for item in items]
+                store, bm25 = self._ensure_collection(coll_name)
+                for d in doc_list:
+                    store[d.id] = d
+                bm25.add_documents(doc_list)
+                total_loaded += len(doc_list)
+
+        return total_loaded

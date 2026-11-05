@@ -39,9 +39,10 @@ class RAGEngine:
     async def ingest_documents(
         self,
         documents: list[Document],
+        collection: str = "default",
         splitter: Optional[BaseTextSplitter] = None,
     ) -> list[str]:
-        """Split documents, compute vector embeddings, and store them in the vector store."""
+        """Split documents, compute vector embeddings, and store them into a specific collection."""
         active_splitter = splitter or self.default_splitter
         chunks = active_splitter.split_documents(documents) if active_splitter else documents
 
@@ -54,27 +55,29 @@ class RAGEngine:
         for chunk, emb in zip(chunks, embeddings):
             chunk.embedding = emb
 
-        added_ids = await self.vector_store.add_documents(chunks)
-        logger.info("Ingested %d document chunks into vector store.", len(added_ids))
+        added_ids = await self.vector_store.add_documents(chunks, collection=collection)
+        logger.info("Ingested %d document chunks into collection %r.", len(added_ids), collection)
         return added_ids
 
     async def ingest_texts(
         self,
         texts: list[str],
+        collection: str = "default",
         metadatas: Optional[list[dict[str, Any]]] = None,
         splitter: Optional[BaseTextSplitter] = None,
     ) -> list[str]:
-        """Convenience method to ingest raw text strings."""
+        """Convenience method to ingest raw text strings into a collection."""
         docs: list[Document] = []
         for idx, text in enumerate(texts):
             meta = metadatas[idx] if metadatas and idx < len(metadatas) else {}
             docs.append(Document(content=text, metadata=meta))
-        return await self.ingest_documents(docs, splitter=splitter)
+        return await self.ingest_documents(docs, collection=collection, splitter=splitter)
 
     async def retrieve(
         self,
         query: str,
         top_k: int = 4,
+        collection: str = "default",
         filter_metadata: Optional[dict[str, Any]] = None,
         mode: str = "hybrid",
     ) -> list[SearchResult]:
@@ -86,12 +89,14 @@ class RAGEngine:
                 query_text=query,
                 query_embedding=query_emb,
                 top_k=top_k,
+                collection=collection,
                 filter_metadata=filter_metadata,
             )
 
         return await self.vector_store.similarity_search(
             query_embedding=query_emb,
             top_k=top_k,
+            collection=collection,
             filter_metadata=filter_metadata,
         )
 
@@ -99,6 +104,7 @@ class RAGEngine:
         self,
         query: str,
         top_k: int = 4,
+        collection: str = "default",
         filter_metadata: Optional[dict[str, Any]] = None,
         mode: str = "hybrid",
         system_prompt: Optional[str] = None,
@@ -108,7 +114,7 @@ class RAGEngine:
     ) -> RAGResponse:
         """Retrieve relevant context and synthesize an answer using the LLM."""
         results = await self.retrieve(
-            query, top_k=top_k, filter_metadata=filter_metadata, mode=mode
+            query, top_k=top_k, collection=collection, filter_metadata=filter_metadata, mode=mode
         )
 
         # Build context string
@@ -150,6 +156,7 @@ class RAGEngine:
         name: str = "search_knowledge_base",
         description: str = "Search the indexed knowledge base and retrieve relevant information for answering queries.",
         top_k: int = 4,
+        collection: str = "default",
         filter_metadata: Optional[dict[str, Any]] = None,
         mode: str = "hybrid",
     ) -> Tool:
@@ -159,7 +166,7 @@ class RAGEngine:
         @tool(name=name, description=description)
         async def rag_tool(query: str) -> dict[str, Any]:
             results = await engine.retrieve(
-                query, top_k=top_k, filter_metadata=filter_metadata, mode=mode
+                query, top_k=top_k, collection=collection, filter_metadata=filter_metadata, mode=mode
             )
             snippets = [
                 {
