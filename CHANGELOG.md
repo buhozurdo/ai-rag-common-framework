@@ -6,6 +6,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.3.0] - 2026-11-04
+
+### Release Title:
+### 📚 `v0.3.0: Modular RAG Core (General Availability)`
+
+### Summary:
+Tercer release estable (GA) del framework. Consolida el motor desacoplado de Retrieval-Augmented Generation (RAG) con filtrado estricto por metadatos, validación de dimensiones vectoriales, persistencia local JSON y exportación nativa a herramientas MCP para agentes y microservicios.
+
+---
+
+### 🌟 Hitos y Características Consolidadas:
+* **Pipeline RAG Modular End-to-End:**
+  * Ingesta, chunking semántico recursivo (`RecursiveTextSplitter`) y preservación de metadatos de trazabilidad (`parent_id`, `chunk_index`).
+  * Generación y normalización de embeddings con soporte para OpenAI, Gemini, Ollama y Mock determinista para tests.
+* **Vector Store en Memoria con Filtrado y Persistencia (`InMemoryVectorStore`):**
+  * Búsqueda por similitud coseno con filtrado booleano por atributos de metadatos (`filter_metadata`).
+  * Validación preventiva de discrepancias en dimensiones de vectores (`ValueError`).
+  * Persistencia y recuperación local sin dependencias (`save_to_json` / `load_from_json`).
+* **Conexión Directa con MCP (`as_tool`):**
+  * Capacidad de transformar cualquier instancia de `RAGEngine` en una herramienta `@tool` en una sola línea de código, lista para exponerse en servidores MCP por stdio o SSE.
+* **Calidad y Cobertura:**
+  * 33 pruebas unitarias aprobadas al 100%.
+
+---
+
+## [v0.3.0-beta] - 2026-11-04
+
+### Release Title:
+### 🛡️ `v0.3.0-beta: Metadata Filtering, Persistence & Dimension Safety`
+
+### Summary:
+Fase Beta de estabilización de la versión `0.3.0`. Endurecimiento del motor vectorial mediante filtrado por metadatos, validación de integridad dimensional de vectores y serialización a disco.
+
+---
+
+### 🔧 Mejoras y Ajustes (Improvements & Fixes):
+* **Filtrado por Metadatos:** Soporte para parámetro `filter_metadata: Optional[dict[str, Any]]` en `similarity_search`, `retrieve`, `query` y `as_tool`.
+* **Seguridad de Dimensiones:** Detección de disparidades en el tamaño de vectores en `cosine_similarity`.
+* **Persistencia Local:** Métodos `save_to_json` y `load_from_json` en `InMemoryVectorStore`.
+* **Tests de Integración:** Pruebas adicionales (`test_dimension_mismatch_validation`, `test_vectorstore_metadata_filtering`, `test_vectorstore_json_save_and_load`).
+
+---
+
 ## [v0.3.0-alpha] - 2026-11-04
 
 ### Release Title:
