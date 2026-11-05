@@ -1,6 +1,7 @@
 """API module providing FastAPI integration, routes, and server factories."""
 
 from common_framework.api.app import create_app, setup_exception_handlers
+from common_framework.api.mcp import MCPAuthMiddleware, mount_mcp_to_fastapi
 from common_framework.api.routes.rag import (
     RAGCollectionDeleteResponse,
     RAGCollectionsResponse,
@@ -17,6 +18,8 @@ from common_framework.api.routes.rag import (
 __all__ = [
     "create_app",
     "setup_exception_handlers",
+    "mount_mcp_to_fastapi",
+    "MCPAuthMiddleware",
     "create_rag_router",
     "RAGQueryRequest",
     "RAGQueryResponse",
