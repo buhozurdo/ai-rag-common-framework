@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Optional, Union
 
+from common_framework.rag.bm25 import BM25Index, reciprocal_rank_fusion
 from common_framework.rag.models import Document, SearchResult
 
 
@@ -50,6 +51,19 @@ class BaseVectorStore(ABC):
         pass
 
     @abstractmethod
+    async def hybrid_search(
+        self,
+        query_text: str,
+        query_embedding: list[float],
+        top_k: int = 4,
+        dense_weight: float = 0.5,
+        sparse_weight: float = 0.5,
+        filter_metadata: Optional[dict[str, Any]] = None,
+    ) -> list[SearchResult]:
+        """Perform hybrid search combining dense vector similarity with sparse BM25 keyword matching via RRF."""
+        pass
+
+    @abstractmethod
     async def delete(self, document_ids: list[str]) -> None:
         """Remove documents by their identifiers."""
         pass
@@ -61,10 +75,11 @@ class BaseVectorStore(ABC):
 
 
 class InMemoryVectorStore(BaseVectorStore):
-    """High-performance, pure-Python in-memory vector store with zero external dependencies."""
+    """High-performance, pure-Python in-memory vector store with native hybrid BM25 search."""
 
     def __init__(self) -> None:
         self._documents: dict[str, Document] = {}
+        self._bm25 = BM25Index()
 
     async def add_documents(self, documents: list[Document]) -> list[str]:
         added_ids: list[str] = []
@@ -73,6 +88,8 @@ class InMemoryVectorStore(BaseVectorStore):
                 raise ValueError(f"Document {doc.id!r} has no embedding. Generate embeddings before adding.")
             self._documents[doc.id] = doc
             added_ids.append(doc.id)
+
+        self._bm25.add_documents(documents)
         return added_ids
 
     async def similarity_search(
@@ -98,9 +115,43 @@ class InMemoryVectorStore(BaseVectorStore):
         scored.sort(key=lambda x: x.score, reverse=True)
         return scored[:top_k]
 
+    async def hybrid_search(
+        self,
+        query_text: str,
+        query_embedding: list[float],
+        top_k: int = 4,
+        dense_weight: float = 0.5,
+        sparse_weight: float = 0.5,
+        filter_metadata: Optional[dict[str, Any]] = None,
+    ) -> list[SearchResult]:
+        """Combine dense cosine similarity and sparse BM25 scoring using Reciprocal Rank Fusion (RRF)."""
+        candidate_count = top_k * 3
+
+        dense_results = await self.similarity_search(
+            query_embedding=query_embedding,
+            top_k=candidate_count,
+            filter_metadata=filter_metadata,
+        )
+
+        sparse_results = self._bm25.search(
+            query=query_text,
+            top_k=candidate_count,
+            filter_metadata=filter_metadata,
+        )
+
+        return reciprocal_rank_fusion(
+            dense_results=dense_results,
+            sparse_results=sparse_results,
+            k=60,
+            dense_weight=dense_weight,
+            sparse_weight=sparse_weight,
+            top_k=top_k,
+        )
+
     async def delete(self, document_ids: list[str]) -> None:
         for doc_id in document_ids:
             self._documents.pop(doc_id, None)
+        self._bm25.delete(document_ids)
 
     async def count(self) -> int:
         return len(self._documents)
@@ -112,6 +163,7 @@ class InMemoryVectorStore(BaseVectorStore):
     def clear(self) -> None:
         """Remove all documents from memory."""
         self._documents.clear()
+        self._bm25 = BM25Index()
 
     def save_to_json(self, filepath: Union[str, Path]) -> None:
         """Serialize documents and embeddings to a local JSON file."""
@@ -122,7 +174,7 @@ class InMemoryVectorStore(BaseVectorStore):
             json.dump(data, f, indent=2, ensure_ascii=False)
 
     def load_from_json(self, filepath: Union[str, Path]) -> int:
-        """Load documents and embeddings from a local JSON file."""
+        """Load documents and embeddings from a local JSON file and rebuild indexes."""
         source_path = Path(filepath)
         if not source_path.exists():
             raise FileNotFoundError(f"Vector store file not found: {source_path}")
@@ -130,9 +182,12 @@ class InMemoryVectorStore(BaseVectorStore):
         with open(source_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        loaded_count = 0
+        loaded_docs: list[Document] = []
         for item in data:
             doc = Document.model_validate(item)
             self._documents[doc.id] = doc
-            loaded_count += 1
-        return loaded_count
+            loaded_docs.append(doc)
+
+        self._bm25 = BM25Index()
+        self._bm25.add_documents(loaded_docs)
+        return len(loaded_docs)
