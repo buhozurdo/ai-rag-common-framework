@@ -147,6 +147,8 @@ def create_app(
     cors_methods: Optional[Sequence[str]] = None,
     cors_headers: Optional[Sequence[str]] = None,
     enable_healthcheck: bool = True,
+    rag_engine: Optional[Any] = None,
+    enable_rag_routes: bool = False,
     settings: Optional[Settings] = None,
     **fastapi_kwargs: Any,
 ) -> FastAPI:
@@ -163,8 +165,9 @@ def create_app(
         **fastapi_kwargs,
     )
 
-    # Attach framework settings to application state
+    # Attach framework settings and optional RAG engine to application state
     app.state.settings = active_settings
+    app.state.rag_engine = rag_engine
 
     # CORS Middleware configuration
     origins = list(cors_origins) if cors_origins is not None else ["*"]
@@ -200,4 +203,11 @@ def create_app(
                 "default_model": active_settings.default_model,
             }
 
+    # Mount optional standard RAG routes
+    if enable_rag_routes:
+        from common_framework.api.routes.rag import create_rag_router
+
+        app.include_router(create_rag_router(engine=rag_engine))
+
     return app
+
