@@ -1,6 +1,6 @@
 # AI RAG Common Framework
 
-> Un framework base modular, ultraligero y con cero código redundante para construir sistemas RAG, servidores MCP (*Model Context Protocol*) y microservicios de IA modernos.
+> A lightweight, modular, zero-bloat foundation framework for building RAG systems, Model Context Protocol (MCP) servers, and modern AI microservices.
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
 [![Version](https://img.shields.io/badge/Version-v0.3.0%20(Stable)-brightgreen.svg)](CHANGELOG.md)
@@ -8,35 +8,35 @@
 
 ---
 
-## 🚀 Estado del Proyecto: `v0.3.0` (General Availability)
+## 🚀 Project Status: `v0.3.0` (General Availability)
 
-Siguiendo nuestro modelo de **Release Train** documentado en [ROADMAP.md](ROADMAP.md), se ha consolidado el release estable **`v0.3.0`** (*Modular RAG Core*), integrando un motor RAG completo, desacoplado y con exportación directa hacia herramientas MCP.
+Following our **Release Train** methodology documented in [ROADMAP.md](ROADMAP.md), the stable release **`v0.3.0`** (*Modular RAG Core*) is now consolidated, featuring a decoupled RAG engine with seamless export to MCP tools.
 
-### Features consolidadas en esta versión:
+### Key Highlights & Features:
 * 🧠 **Modular RAG Pipeline (`common_framework.rag`):**
-  * `RAGEngine`: orquestación de ingesta, fragmentación, cálculo vectorial y síntesis con LLM.
-  * `RecursiveTextSplitter`: particionado semántico inteligente preservando metadatos (`parent_id`, `chunk_index`).
-  * `InMemoryVectorStore`: base vectorial pura sin librerías externas pesadas, con filtrado por metadatos (`filter_metadata`) y persistencia local (`save_to_json` / `load_from_json`).
-  * `EmbeddingFactory`: adaptadores para OpenAI, Gemini, Ollama y Mock determinista para testing local.
-  * **Exportación a MCP (`engine.as_tool`):** Convierte cualquier pipeline RAG en una herramienta MCP en una sola línea.
-* 🛠️ **Dual-Use Tooling Engine (`common_framework.tools`):** Decorador `@tool` con auto-generación de JSON Schema compatible con OpenAI y MCP.
-* 🌐 **Servidor MCP Nativo (`common_framework.mcp`):** Protocolo `mcp 2.x` con soporte completo de **Tools, Resources y Prompts** sobre transportes **stdio** y **SSE**.
-* 🤖 **Cliente LLM Agnóstico y Unificado (`core.llm`):** Abstracción común para Gemini, OpenAI, Ollama, DeepSeek, Groq y vLLM.
-* 🛡️ **Resiliencia y Reintentos Automáticos:** Exponential backoff para fallos transitorios (HTTP 429, 5xx) y excepción `RateLimitError`.
-* 🎯 **Structured Outputs Nativos:** Validación garantizada contra esquemas Pydantic (`structured_complete`).
-* 📦 **Empaquetado Moderno:** Configuración estándar en `pyproject.toml` (PEP 517/518/621).
+  * `RAGEngine`: End-to-end orchestration of ingestion, splitting, vector generation, and LLM synthesis.
+  * `RecursiveTextSplitter`: Hierarchical semantic chunking preserving traceability metadata (`parent_id`, `chunk_index`).
+  * `InMemoryVectorStore`: Pure-Python vector store with zero heavy database dependencies, metadata filtering (`filter_metadata`), and JSON persistence (`save_to_json` / `load_from_json`).
+  * `EmbeddingFactory`: Adapters for OpenAI, Gemini, Ollama, and a deterministic Mock provider for local testing.
+  * **MCP Export (`engine.as_tool`):** Convert any RAG pipeline into an MCP tool with a single method call.
+* 🛠️ **Dual-Use Tooling Engine (`common_framework.tools`):** Universal `@tool` decorator with automatic JSON Schema generation via Pydantic. Use the same function inside internal LLM agent loops and expose it via MCP.
+* 🌐 **Native MCP Server (`common_framework.mcp`):** Built on the official `mcp 2.x` standard (`MCPServer`) with complete support for **Tools, Resources, and Prompts** over **stdio** (local) and **SSE** (remote/web) transports.
+* 🤖 **Agnostic & Unified LLM Client (`core.llm`):** Unified async interface for Gemini, OpenAI, Ollama, DeepSeek, Groq, and vLLM.
+* 🛡️ **Resilience & Automatic Retries:** Exponential backoff on transient errors (HTTP 429, 5xx, network drops) and typed `RateLimitError` handling.
+* 🎯 **Native Structured Outputs:** Guaranteed schema validation against Pydantic models (`structured_complete`).
+* 📦 **Modern Packaging:** Standardized `pyproject.toml` (PEP 517/518/621).
 
 ---
 
-## 📦 Instalación
+## 📦 Installation
 
-Para instalar el framework en modo editable localmente:
+Install the package in editable mode locally:
 
 ```bash
 pip install -e .
 ```
 
-O con dependencias opcionales de desarrollo y testing:
+Or install with optional development and testing dependencies:
 
 ```bash
 pip install -e ".[test,mcp]"
@@ -44,28 +44,28 @@ pip install -e ".[test,mcp]"
 
 ---
 
-## 🛠️ Configuración Rápida
+## 🛠️ Quick Configuration
 
-Crea un archivo `.env` en la raíz de tu proyecto (puedes basarte en `.env.example`):
+Create a `.env` file in your project root (refer to `.env.example`):
 
 ```env
 FRAMEWORK_ENV=development
 LOG_LEVEL=INFO
 
-# Proveedor por defecto (gemini, openai, ollama)
+# Default LLM Provider (gemini, openai, ollama)
 DEFAULT_LLM_PROVIDER=gemini
 DEFAULT_LLM_MODEL=gemini-2.5-flash
 
-# Llaves API
-GEMINI_API_KEY=tu_api_key_aqui
+# API Keys
+GEMINI_API_KEY=your_gemini_api_key
 OPENAI_API_KEY=
 ```
 
 ---
 
-## 💻 Ejemplos de Uso
+## 💻 Usage Examples
 
-### 1. Inicialización y Chat Completion Simple
+### 1. Simple Chat Completion
 
 ```python
 import asyncio
@@ -75,19 +75,19 @@ async def main():
     client = LLMFactory.create()
 
     messages = [
-        ChatMessage(role=Role.SYSTEM, content="Eres un asistente conciso."),
-        ChatMessage(role=Role.USER, content="¿Qué es el Model Context Protocol en una frase?")
+        ChatMessage(role=Role.SYSTEM, content="You are a concise assistant."),
+        ChatMessage(role=Role.USER, content="What is the Model Context Protocol in one sentence?")
     ]
 
     response = await client.complete(messages)
-    print(f"Respuesta ({response.model}):\n{response.content}")
-    print(f"Tokens usados: {response.usage.total_tokens}")
+    print(f"Response ({response.model}):\n{response.content}")
+    print(f"Total tokens: {response.usage.total_tokens}")
 
 if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-### 2. Structured Outputs con Pydantic (Cero Parseo Manual)
+### 2. Structured Outputs with Pydantic (Zero Manual Parsing)
 
 ```python
 import asyncio
@@ -95,7 +95,7 @@ from pydantic import BaseModel, Field
 from common_framework import LLMFactory, ChatMessage, Role
 
 class SentimentAnalysis(BaseModel):
-    sentiment: str = Field(description="positive, negative, o neutral")
+    sentiment: str = Field(description="positive, negative, or neutral")
     confidence: float = Field(ge=0.0, le=1.0)
     summary: str
 
@@ -105,7 +105,7 @@ async def main():
     messages = [
         ChatMessage(
             role=Role.USER,
-            content="Analiza este comentario: 'El framework es sumamente rápido y limpio de configurar.'"
+            content="Analyze this review: 'The framework setup is blazingly fast and elegant.'"
         )
     ]
 
@@ -114,50 +114,52 @@ async def main():
         response_model=SentimentAnalysis
     )
 
-    print("Sentimiento:", result.sentiment)
-    print("Confianza:", result.confidence)
-    print("Resumen:", result.summary)
+    print("Sentiment:", result.sentiment)
+    print("Confidence:", result.confidence)
+    print("Summary:", result.summary)
 
 if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-### 3. Servidor MCP con Herramientas de Doble Uso (Dual-Use Tools)
+### 3. MCP Server with Dual-Use Tools
 
 ```python
 from common_framework import create_mcp_server, tool
 
+# Define a universal tool
 @tool(name="calculate_discount", description="Calculates final price after discount percentage.")
 def calculate_discount(price: float, discount_pct: float) -> dict[str, float]:
     savings = round(price * (discount_pct / 100), 2)
     return {"final_price": price - savings, "savings": savings}
 
+# Create MCP server and register tool
 server = create_mcp_server(name="pricing-service", version="0.3.0")
 server.add_tool(calculate_discount)
 
-# Ejecución:
-# server.run_stdio()       # Para Cursor / Claude Desktop / Antigravity
-# server.run_sse(port=8000) # Para acceso HTTP / Webhooks
+# Execution:
+# server.run_stdio()        # For Cursor / Claude Desktop / Antigravity
+# server.run_sse(port=8000) # For HTTP / Remote Web clients
 ```
 
-### 4. Modular RAG Engine con Exportación Directa a MCP
+### 4. Modular RAG Engine with Direct MCP Export
 
 ```python
 import asyncio
 from common_framework import InMemoryVectorStore, RAGEngine, create_mcp_server
 
 async def main():
-    # 1. Iniciar RAG Engine sin necesidad de base de datos externa
+    # 1. Initialize RAG Engine without requiring external databases
     engine = RAGEngine(vector_store=InMemoryVectorStore())
     await engine.ingest_texts([
-        "El servidor principal de producción está en 10.0.0.1.",
-        "Las copias de seguridad se realizan a las 02:00 AM UTC diariamente."
+        "The primary production database is located at 10.0.0.1.",
+        "Automated backups run daily at 02:00 AM UTC."
     ])
 
-    # 2. Convertir el pipeline RAG en una herramienta para agentes y MCP
-    rag_tool = engine.as_tool(name="search_infra", description="Consulta datos de infraestructura")
+    # 2. Export RAG pipeline as a callable tool
+    rag_tool = engine.as_tool(name="search_infra", description="Search internal infrastructure docs")
 
-    # 3. Montar en servidor MCP
+    # 3. Mount directly into an MCP server
     server = create_mcp_server(name="infra-mcp-service")
     server.add_tool(rag_tool)
     # server.run_stdio()
@@ -168,7 +170,7 @@ if __name__ == "__main__":
 
 ---
 
-## 🧪 Ejecución de Tests
+## 🧪 Running Tests
 
 ```bash
 python -m pytest -v
@@ -176,9 +178,9 @@ python -m pytest -v
 
 ---
 
-## 🗺️ Próximas Versiones en el Release Train
+## 🗺️ Upcoming Releases in the Release Train
 
-Consulta el detalle completo en [ROADMAP.md](ROADMAP.md).
-* **`v0.4.0-alpha`**: *FastAPI Service & Hybrid Endpoints* (REST API + MCP over SSE Gateway integrado).
+See [ROADMAP.md](ROADMAP.md) for full details.
+* **`v0.4.0-alpha`**: *FastAPI Service & Hybrid Endpoints* (REST API + Integrated MCP over SSE Gateway).
 * **`v0.5.0-alpha`**: *Autonomous Agents & Workflows*.
 * **`v0.6.0-alpha`**: *Observability, Evaluation & Gateway*.

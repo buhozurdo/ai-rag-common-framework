@@ -1,124 +1,121 @@
-# Roadmap y Modelo de Release Trains — AI RAG Common Framework
+# Roadmap & Release Train Model — AI RAG Common Framework
 
-Este framework adopta un modelo de **Release Train (tren de versiones)** con desfase controlado para garantizar estabilidad, pruebas rigurosas y desacoplamiento entre el desarrollo activo y el despliegue en producción.
+This framework adopts a staggered **Release Train** methodology to guarantee architectural stability, rigorous testing, and strict decoupling between active development and production releases.
 
 ---
 
-## 🚆 Modelo de Release Trains y Canales
+## 🚆 Release Train Channels & Pipeline
 
-El ciclo de maduración de una versión fluye por 4 canales con un pipeline escalonado:
+The maturity lifecycle of every minor version progresses across 4 distinct channels with a controlled version offset:
 
 ```
-[ Canary ] ──────▶ [ Alpha ] ──────▶ [ Beta ] ──────▶ [ Release ]
-(Pre-Alpha)       (4 versiones      (2 versiones       (Versión Final /
-                 atrás de Release)  atrás de Release)   Producción)
+[ Canary ] ────────▶ [ Alpha ] ────────▶ [ Beta ] ────────▶ [ Release ]
+(Pre-Alpha:         (Active Dev:          (Stabilization:       (Production /
+ Exploratory)       -4 from Release)      -2 from Release)      General Availability)
 ```
 
-### Canales y Roles:
+### Channel Definitions & Roles:
 1. **`canary` (Pre-Alpha):**
-   * Canal experimental / bleeding-edge.
-   * Prototipos, spikes técnicos, investigación de compatibilidad con nuevos modelos y estándares.
-   * Tag: `vX.Y.0-canary`
-2. **`alpha` (4 versiones atrás de Release):**
-   * **Donde trabajan los desarrolladores activamente.**
-   * Implementación de features base, contratos de API y arquitectura central.
-   * Tag: `vX.Y.0-alpha`
-3. **`beta` (2 versiones atrás de Release):**
-   * Congelación de APIs (*feature freeze*).
-   * Pruebas de integración, performance, tests de regresión y ajustes de compatibilidad.
-   * Tag: `vX.Y.0-beta`
-4. **`release` (Final / Producción):**
-   * Versión completamente estabilizada, probada y lista para consumo en proyectos productivos.
-   * Tag: `vX.Y.0`
+   * Bleeding-edge / exploratory space.
+   * Technical spikes, prototypes, and emerging protocol research.
+   * Tag format: `vX.Y.0-canary`
+2. **`alpha` (-4 versions from Release):**
+   * **Where developers actively implement core features.**
+   * Architecture design, contracts, base implementations, and unit test suites.
+   * Tag format: `vX.Y.0-alpha`
+3. **`beta` (-2 versions from Release):**
+   * Feature freeze stage.
+   * Integration testing, performance tuning, regression tests, and edge-case hardening.
+   * Tag format: `vX.Y.0-beta`
+4. **`release` (Final / Production):**
+   * Fully consolidated, benchmarked, and stabilized version ready for production consumption.
+   * Tag format: `vX.Y.0`
 
 ---
 
-## 📊 Matriz de Progresión del Pipeline
+## 📊 Release Train Progression Matrix
 
-A medida que el proyecto avance en su tren de releases, la relación entre canales se escalona de la siguiente manera:
+As the framework evolves, the pipeline relationship across channels progresses as follows:
 
-| Hito Global | Canary (Pre-Alpha) | Alpha (Devs: -4) | Beta (-2) | Release (Producción) |
+| Global Milestone | Canary (Pre-Alpha) | Alpha (Devs: -4) | Beta (-2) | Release (Production) |
 | :--- | :--- | :--- | :--- | :--- |
-| **Fase 1** | v0.5.0-canary | **v0.1.0-alpha** *(Iniciando aquí)* | — | — |
-| **Fase 2** | v0.6.0-canary | **v0.2.0-alpha** | — | — |
-| **Fase 3** | v0.7.0-canary | **v0.3.0-alpha** | **v0.1.0-beta** | — |
-| **Fase 4** | v0.8.0-canary | **v0.4.0-alpha** | **v0.2.0-beta** | — |
-| **Fase 5** | v0.9.0-canary | **v0.5.0-alpha** | **v0.3.0-beta** | **v0.1.0 (Final)** |
-| **Fase 6** | v1.0.0-canary | **v0.6.0-alpha** | **v0.4.0-beta** | **v0.2.0 (Final)** |
+| **Phase 1** | v0.5.0-canary | v0.1.0-alpha | — | — |
+| **Phase 2** | v0.6.0-canary | v0.2.0-alpha | — | — |
+| **Phase 3** | v0.7.0-canary | v0.3.0-alpha | v0.1.0-beta | — |
+| **Phase 4** | v0.8.0-canary | v0.4.0-alpha | v0.2.0-beta | — |
+| **Phase 5** | v0.9.0-canary | v0.5.0-alpha | v0.3.0-beta | **v0.1.0 (GA)** |
+| **Phase 6** | v1.0.0-canary | v0.6.0-alpha | v0.4.0-beta | **v0.2.0 (GA)** |
+| **Phase 7** | — | — | — | **v0.3.0 (GA)** |
 
 ---
 
-## 📌 Detalle de Versiones Menores y Features
+## 📌 Minor Versions & Feature Breakdown
 
-### 🔹 v0.1.0 — "Foundation & Core Architecture"
-* **Canal actual:** `v0.1.0-alpha` *(Fase de desarrollo activo)*
-* **Objetivo:** Núcleo ligero, configuración unificada y cliente agnóstico de LLMs.
+### 🔹 v0.1.0 — "Foundation & Core Architecture" *(Status: Released)*
+* **Objective:** Clean, lightweight core foundation, typed configuration, and an agnostic LLM client.
 * **Features:**
-  * Estructura de paquete estándar (`pyproject.toml`).
-  * Configuración tipada mediante `pydantic-settings` (`core/config.py`).
-  * Abstracción agnóstica de LLMs (Gemini, OpenAI, Anthropic, Ollama) con soporte para *Structured Outputs*.
-  * Jerarquía de excepciones y logging estructurado.
+  * Package setup via `pyproject.toml` (PEP 517/518/621).
+  * Centralized typed settings via `pydantic-settings` (`core/config.py`).
+  * Unified async LLM client for Gemini, OpenAI, Ollama, DeepSeek, and Groq.
+  * Native Structured Outputs with Pydantic validation.
+  * Standard exception hierarchy and exponential backoff on transient errors (`RateLimitError`).
 
 ---
 
-### 🔹 v0.2.0 — "Tooling & MCP Engine"
-* **Canal:** `v0.2.0-alpha`
-* **Objetivo:** Registro universal de herramientas y servidor Model Context Protocol.
+### 🔹 v0.2.0 — "Tooling & MCP Engine" *(Status: Released)*
+* **Objective:** Universal tool ecosystem and native Model Context Protocol (MCP 2.x) support.
 * **Features:**
-  * Decorador `@tool` con auto-generación de JSON Schema compatible con OpenAI/Anthropic/Gemini.
-  * Servidor MCP nativo con soporte de transportes **stdio** (local) y **SSE** (red/HTTP).
-  * *Dual-use tools*: una sola definición utilizable tanto por agentes internos como por clientes MCP externos.
+  * `@tool` decorator with automatic JSON Schema generation via Pydantic introspection.
+  * Centralized `ToolRegistry` for tool discovery and dynamic execution.
+  * Official MCP 2.x server adapter (`FrameworkMCPServer`) covering **Tools, Resources, and Prompts**.
+  * **Dual-Use Tools:** A single Python function serves both internal LLM agent workflows and external MCP clients.
+  * Transport support for **stdio** (Cursor, Claude Desktop, Antigravity) and **SSE** (Web / HTTP / ASGI).
 
 ---
 
-### 🔹 v0.3.0 — "Modular RAG Core"
-* **Canal:** `v0.3.0-alpha`
-* **Objetivo:** Motor de Retrieval-Augmented Generation flexible y desacoplado.
+### 🔹 v0.3.0 — "Modular RAG Core" *(Status: Released)*
+* **Objective:** Modular, decoupled Retrieval-Augmented Generation (RAG) engine.
 * **Features:**
-  * Interfaces universales de Embeddings y Vector Stores.
-  * Adaptadores vectoriales: `InMemoryVectorStore` (cero dependencias externas para dev/test) y conectores a bases de datos vectoriales.
-  * Splitters y chunkers semánticos configurables.
-  * Pipeline de recuperación densa y síntesis de respuestas con fuentes citadas.
+  * Abstract interfaces for Embeddings and Vector Stores.
+  * `InMemoryVectorStore` with cosine similarity, zero external database requirements, metadata filtering (`filter_metadata`), and JSON persistence.
+  * Text chunking with `CharacterTextSplitter` and `RecursiveTextSplitter` with lineage tracking (`parent_id`, `chunk_index`).
+  * `RAGEngine` orchestrator with direct MCP export via `engine.as_tool()`.
 
 ---
 
-### 🔹 v0.4.0 — "FastAPI Service & Hybrid Endpoints"
-* **Canal:** `v0.4.0-alpha`
-* **Objetivo:** Exposición de RAG y MCP mediante API REST moderna.
+### 🔹 v0.4.0 — "FastAPI Service & Hybrid Endpoints" *(Status: In Progress)*
+* **Objective:** Production-grade REST API and seamless MCP-over-SSE gateway integration.
 * **Features:**
-  * Factoría de aplicación FastAPI con middlewares, CORS y Swagger automático.
-  * Rutas REST para `/rag/query`, `/rag/ingest` y `/rag/documents`.
-  * Gateway MCP-over-SSE integrado directamente en el servidor HTTP.
-  * Endpoints de salud (`/healthz`) y diagnóstico.
+  * Reusable FastAPI application factory with standard CORS, middleware, and exception handlers.
+  * Out-of-the-box REST endpoints for `/rag/query`, `/rag/ingest`, and document management.
+  * Native mounting utility `mount_mcp_to_fastapi` solving sub-app path routing conflicts.
+  * Health check and telemetry endpoints (`/healthz`).
 
 ---
 
 ### 🔹 v0.5.0 — "Autonomous Agents & Workflows"
-* **Canal:** `v0.5.0-alpha`
-* **Objetivo:** Agentes autónomos ligeros que orquesten herramientas y RAG.
+* **Objective:** Lightweight autonomous agents orchestrating Tools and RAG.
 * **Features:**
-  * Runner de agentes tipo ReAct (Reasoning + Action) sin sobrecarga de frameworks pesados.
-  * Memoria conversacional de corto y largo plazo.
-  * Soporte de streaming nativo (SSE).
-  * Ganchos de confirmación (*Human-in-the-loop*).
+  * ReAct (Reasoning + Action) execution loop without heavyweight framework overhead.
+  * Short-term conversation buffer and long-term semantic memory retrieval via RAG.
+  * Native Server-Sent Events (SSE) streaming for step-by-step token generation.
+  * Human-in-the-loop confirmation hooks for sensitive tools.
 
 ---
 
 ### 🔹 v0.6.0 — "Observability, Evaluation & Gateway"
-* **Canal:** `v0.6.0-alpha`
-* **Objetivo:** Métricas, telemetría y evaluación de calidad.
+* **Objective:** Production telemetry, model fallbacks, and answer quality evaluation.
 * **Features:**
-  * Monitor de consumo de tokens y estimación de costos.
-  * Caché semántico para optimización de llamadas repetitivas.
-  * Métricas RAG Triad (relevancia de contexto, fidelidad y respuesta).
-  * Soporte para exportación OpenTelemetry / Langfuse.
+  * Token & cost tracking per request and provider.
+  * Model fallbacks with automatic failover on quota exhaustion (HTTP 429).
+  * Semantic caching to reduce repetitive latency and API costs.
+  * Lightweight RAG evaluation metrics (Context Relevance, Groundedness, Answer Relevance).
 
 ---
 
 ### 🔹 v1.0.0 — "Production Hardening & Stable Release"
-* **Canal:** `v1.0.0-alpha`
-* **Objetivo:** Consolidación de API pública y distribución del paquete.
+* **Objective:** API freezing, comprehensive documentation, and official package distribution.
 * **Features:**
-  * Contratos estables y congelados en APIs públicas.
-  * CLI del framework (`rag-mcp` CLI) para inicialización y ejecución.
-  * Cobertura de pruebas completa y plantillas de despliegue.
+  * Frozen, stable public API contracts.
+  * Framework CLI (`rag-mcp` CLI) for scaffolding, running MCP servers, and starting web gateways.
+  * Production Dockerfiles and CI/CD templates.
