@@ -149,6 +149,9 @@ def create_app(
     enable_healthcheck: bool = True,
     rag_engine: Optional[Any] = None,
     enable_rag_routes: bool = False,
+    mcp_server: Optional[Any] = None,
+    mcp_prefix: str = "/mcp",
+    mcp_api_key: Optional[str] = None,
     settings: Optional[Settings] = None,
     **fastapi_kwargs: Any,
 ) -> FastAPI:
@@ -165,9 +168,10 @@ def create_app(
         **fastapi_kwargs,
     )
 
-    # Attach framework settings and optional RAG engine to application state
+    # Attach framework settings and optional components to application state
     app.state.settings = active_settings
     app.state.rag_engine = rag_engine
+    app.state.mcp_server = mcp_server
 
     # CORS Middleware configuration
     origins = list(cors_origins) if cors_origins is not None else ["*"]
@@ -208,6 +212,17 @@ def create_app(
         from common_framework.api.routes.rag import create_rag_router
 
         app.include_router(create_rag_router(engine=rag_engine))
+
+    # Mount optional MCP server over SSE
+    if mcp_server is not None:
+        from common_framework.api.mcp import mount_mcp_to_fastapi
+
+        mount_mcp_to_fastapi(
+            app=app,
+            mcp_server=mcp_server,
+            prefix=mcp_prefix,
+            api_key=mcp_api_key,
+        )
 
     return app
 

@@ -24,7 +24,7 @@ class FrameworkMCPServer:
         tool_registry: Optional[ToolRegistry] = None,
     ) -> None:
         self.name = name
-        self.version = version
+        self.version = version or "0.4.0"
         self.instructions = instructions
         self.registry = tool_registry if tool_registry is not None else global_tool_registry
         self.underlying_server = MCPServer(
@@ -149,9 +149,25 @@ class FrameworkMCPServer:
         """Run the MCP server over Server-Sent Events asynchronously."""
         await self.underlying_server.run_sse_async(host=host, port=port)
 
-    def get_sse_app(self) -> Any:
+    def get_sse_app(
+        self,
+        transport_security: Any = None,
+        host: str = "127.0.0.1",
+        disable_dns_protection: bool = True,
+    ) -> Any:
         """Return the Starlette ASGI application for SSE mounting in FastAPI/ASGI servers."""
-        return self.underlying_server.sse_app()
+        if transport_security is None and disable_dns_protection:
+            try:
+                from mcp.server.transport_security import TransportSecuritySettings
+
+                transport_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
+            except Exception:
+                transport_security = None
+
+        return self.underlying_server.sse_app(
+            transport_security=transport_security,
+            host=host,
+        )
 
     def __repr__(self) -> str:
         return f"<FrameworkMCPServer name={self.name!r} version={self.version!r}>"
