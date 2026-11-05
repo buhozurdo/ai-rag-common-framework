@@ -45,7 +45,8 @@ As the framework evolves, the pipeline relationship across channels progresses a
 | **Phase 4** | v0.8.0-canary | v0.4.0-alpha | v0.2.0-beta | — |
 | **Phase 5** | v0.9.0-canary | v0.5.0-alpha | v0.3.0-beta | **v0.1.0 (GA)** |
 | **Phase 6** | v1.0.0-canary | v0.6.0-alpha | v0.4.0-beta | **v0.2.0 (GA)** |
-| **Phase 7** | — | — | — | **v0.3.0 (GA)** |
+| **Phase 7** | — | v0.5.0-alpha | — | **v0.3.0 (GA)** |
+| **Phase 8** | — | — | — | **v0.4.0 (GA)** |
 
 ---
 
@@ -83,13 +84,15 @@ As the framework evolves, the pipeline relationship across channels progresses a
 
 ---
 
-### 🔹 v0.4.0 — "FastAPI Service & Hybrid Endpoints" *(Status: In Progress)*
-* **Objective:** Production-grade REST API and seamless MCP-over-SSE gateway integration.
+### 🔹 v0.4.0 — "FastAPI Service & Hybrid Endpoints" *(Status: Released)*
+* **Objective:** Production-grade REST API, Okapi BM25 hybrid search, and seamless MCP-over-SSE gateway integration.
 * **Features:**
-  * Reusable FastAPI application factory with standard CORS, middleware, and exception handlers.
-  * Out-of-the-box REST endpoints for `/rag/query`, `/rag/ingest`, and document management.
-  * Native mounting utility `mount_mcp_to_fastapi` solving sub-app path routing conflicts.
-  * Health check and telemetry endpoints (`/healthz`).
+  * Reusable FastAPI application factory `create_app` with standard CORS, liveness (`/healthz`), and readiness (`/readyz`) probes.
+  * Automated exception handlers translating framework exceptions to standard HTTP status codes.
+  * Pre-built REST router `create_rag_router` (`/rag/query`, `/rag/retrieve`, `/rag/ingest`, `/rag/collections`).
+  * Pure-Python Okapi BM25 indexing and Reciprocal Rank Fusion (RRF) for hybrid retrieval (`mode="hybrid"`).
+  * Multi-tenant collection isolation with independent BM25 statistics and multi-collection persistence.
+  * Native mounting utility `mount_mcp_to_fastapi` with built-in `MCPAuthMiddleware` supporting Bearer, `X-API-Key`, and query parameter auth.
 
 ---
 

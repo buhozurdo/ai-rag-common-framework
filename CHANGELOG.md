@@ -6,6 +6,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.4.0] - 2026-11-05
+
+### Release Title:
+### 🚀 `v0.4.0: FastAPI Gateway, Hybrid Search & MCP Sub-App Integration (General Availability)`
+
+### Summary:
+Fourth major stable release (GA) of the framework. Delivers production-grade web microservices with an unopinionated FastAPI application factory, automated exception-to-HTTP mapping, pure-Python Okapi BM25 hybrid search with Reciprocal Rank Fusion (RRF), multi-tenant collection isolation, and seamless MCP SSE mounting with bearer/API-key authentication.
+
+---
+
+### 🌟 Key Highlights & Consolidated Features:
+* **FastAPI Application Factory (`create_app`):**
+  * Production-ready preconfigured FastAPI instances with customizable CORS, liveness (`/healthz`), and readiness (`/readyz`) probes.
+  * Automatic exception mapping converting framework errors (`RateLimitError`, `AuthenticationError`, `ToolNotFoundError`, `ToolExecutionError`, `StructuredOutputError`, `FrameworkError`) into standard RFC 7807/HTTP status codes (429 with `Retry-After`, 401, 404, 400, 502, 500).
+* **Pre-built FastAPI RAG Endpoints (`create_rag_router`):**
+  * Standard REST endpoints for query synthesis (`POST /rag/query`), chunk retrieval (`POST /rag/retrieve`), batch text ingestion (`POST /rag/ingest`), and multi-tenant collection lifecycle (`GET /rag/collections`, `DELETE /rag/collections/{name}`).
+* **Hybrid MCP Gateway (`mount_mcp_to_fastapi` & `MCPAuthMiddleware`):**
+  * Mount official Model Context Protocol 2.x SSE servers directly into FastAPI applications without route collisions or ASGI stripping issues.
+  * Built-in `MCPAuthMiddleware` supporting Bearer tokens, `X-API-Key` headers, and `?api_key=` query parameter authentication with timing-attack prevention.
+* **Hybrid Search with BM25 & RRF (`rag/bm25.py`):**
+  * Zero-bloat Okapi BM25 indexing in pure Python combined with dense vector retrieval via Reciprocal Rank Fusion ($k=60$).
+* **Multi-Tenant Collection Isolation:**
+  * Strict statistical BM25 term frequency separation and multi-collection JSON persistence in `InMemoryVectorStore`.
+* **Comprehensive Quality & Verification:**
+  * 59 automated unit and integration tests passing at 100%.
+
+---
+
+## [v0.4.0-beta] - 2026-11-05
+
+### Release Title:
+### 🛡️ `v0.4.0-beta: FastAPI RAG Routes & Hybrid MCP Gateway Hardening`
+
+### Summary:
+Beta stabilization stage for version `0.4.0`. Integrated and hardened RESTful RAG routers and authenticated MCP mounting over SSE in FastAPI.
+
+---
+
+### 🔧 Improvements & Fixes:
+* **FastAPI RAG Router:** Added `create_rag_router` with Pydantic request/response models and collection management.
+* **MCP ASGI Gateway:** Built `mount_mcp_to_fastapi` and `MCPAuthMiddleware` supporting Bearer, `X-API-Key`, and query param auth.
+* **Transport Security:** Resolved MCP 2.x DNS rebinding and host validation conflicts when mounting Starlette SSE sub-apps into FastAPI.
+* **Integration Tests:** Added 9 new integration tests covering RAG endpoints and MCP authentication methods.
+
+---
+
+## [v0.4.0-alpha] - 2026-11-05
+
+### Release Title:
+### ⚡ `v0.4.0-alpha: Hybrid Search (BM25 + RRF) & FastAPI Factory`
+
+### Summary:
+Active development Alpha release. Introduced pure-Python Okapi BM25 indexing, Reciprocal Rank Fusion, collection namespaces, and standard FastAPI application factory.
+
+---
+
 ## [v0.3.0] - 2026-11-04
 
 ### Release Title:

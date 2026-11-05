@@ -3,28 +3,35 @@
 > A lightweight, modular, zero-bloat foundation framework for building RAG systems, Model Context Protocol (MCP) servers, and modern AI microservices.
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/Version-v0.3.0%20(Stable)-brightgreen.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-v0.4.0%20(Stable)-brightgreen.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
 
-## 🚀 Project Status: `v0.3.0` (General Availability)
+## 🚀 Project Status: `v0.4.0` (General Availability)
 
-Following our **Release Train** methodology documented in [ROADMAP.md](ROADMAP.md), the stable release **`v0.3.0`** (*Modular RAG Core*) is now consolidated, featuring a decoupled RAG engine with seamless export to MCP tools.
+Following our **Release Train** methodology documented in [ROADMAP.md](ROADMAP.md), the stable release **`v0.4.0`** (*FastAPI Gateway, Hybrid Search & MCP Sub-App Integration*) is now consolidated and available for production.
 
 ### Key Highlights & Features:
-* 🧠 **Modular RAG Pipeline (`common_framework.rag`):**
+* ⚡ **FastAPI Application Factory (`common_framework.api`):**
+  * `create_app`: Production-ready FastAPI factory with preconfigured CORS, liveness (`/healthz`), and readiness (`/readyz`) probes.
+  * Automated exception translation mapping framework errors (`RateLimitError` -> 429 + `Retry-After`, `AuthenticationError` -> 401, `ToolNotFoundError` -> 404, `ToolExecutionError` -> 400, `StructuredOutputError` -> 502, `FrameworkError` -> 500).
+  * `create_rag_router`: Standard REST endpoints for query synthesis (`/rag/query`), chunk retrieval (`/rag/retrieve`), batch ingestion (`/rag/ingest`), and multi-tenant collection lifecycle (`/rag/collections`).
+* 🔌 **Hybrid MCP Sub-App Gateway (`mount_mcp_to_fastapi`):**
+  * Mount official Model Context Protocol 2.x SSE servers into FastAPI without path stripping conflicts.
+  * Built-in `MCPAuthMiddleware` supporting Bearer tokens, `X-API-Key` headers, and `?api_key=` query parameter authentication.
+* 🔍 **Pure-Python BM25 + Dense Hybrid Search (`common_framework.rag`):**
+  * Okapi BM25 indexer with zero heavy C/NLP dependencies combined with dense vector retrieval via Reciprocal Rank Fusion ($k=60$).
+  * Multi-tenant collection isolation with isolated BM25 statistical spaces and JSON persistence.
+* 🧠 **Modular RAG Pipeline:**
   * `RAGEngine`: End-to-end orchestration of ingestion, splitting, vector generation, and LLM synthesis.
   * `RecursiveTextSplitter`: Hierarchical semantic chunking preserving traceability metadata (`parent_id`, `chunk_index`).
-  * `InMemoryVectorStore`: Pure-Python vector store with zero heavy database dependencies, metadata filtering (`filter_metadata`), and JSON persistence (`save_to_json` / `load_from_json`).
-  * `EmbeddingFactory`: Adapters for OpenAI, Gemini, Ollama, and a deterministic Mock provider for local testing.
-  * **MCP Export (`engine.as_tool`):** Convert any RAG pipeline into an MCP tool with a single method call.
-* 🛠️ **Dual-Use Tooling Engine (`common_framework.tools`):** Universal `@tool` decorator with automatic JSON Schema generation via Pydantic. Use the same function inside internal LLM agent loops and expose it via MCP.
-* 🌐 **Native MCP Server (`common_framework.mcp`):** Built on the official `mcp 2.x` standard (`MCPServer`) with complete support for **Tools, Resources, and Prompts** over **stdio** (local) and **SSE** (remote/web) transports.
-* 🤖 **Agnostic & Unified LLM Client (`core.llm`):** Unified async interface for Gemini, OpenAI, Ollama, DeepSeek, Groq, and vLLM.
-* 🛡️ **Resilience & Automatic Retries:** Exponential backoff on transient errors (HTTP 429, 5xx, network drops) and typed `RateLimitError` handling.
-* 🎯 **Native Structured Outputs:** Guaranteed schema validation against Pydantic models (`structured_complete`).
-* 📦 **Modern Packaging:** Standardized `pyproject.toml` (PEP 517/518/621).
+  * `InMemoryVectorStore`: Pure-Python vector store with metadata filtering (`filter_metadata`) and JSON persistence.
+  * `EmbeddingFactory`: Adapters for OpenAI, Gemini, Ollama, and deterministic Mock embeddings.
+  * **MCP Export (`engine.as_tool`):** Convert any RAG pipeline into an MCP tool with a single call.
+* 🛠️ **Dual-Use Tooling Engine (`common_framework.tools`):** Universal `@tool` decorator with automatic JSON Schema generation via Pydantic.
+* 🌐 **Native MCP Server (`common_framework.mcp`):** Built on the official `mcp 2.x` standard (`MCPServer`) with complete support for Tools, Resources, and Prompts over stdio and SSE transports.
+* 🤖 **Agnostic & Unified LLM Client (`common_framework.core.llm`):** Unified async interface for Gemini, OpenAI, Ollama, DeepSeek, Groq, and vLLM with retries, exponential backoff, and Pydantic structured outputs.
 
 ---
 
@@ -168,6 +175,32 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
+### 5. Production FastAPI Microservice with RAG & Authenticated MCP
+
+```python
+from common_framework import RAGEngine, create_app, create_mcp_server, tool
+
+# 1. Initialize RAG Engine and MCP Server
+rag = RAGEngine()
+mcp = create_mcp_server(name="gateway-mcp")
+
+@mcp.tool(name="status", description="Get cluster health status")
+def get_status() -> dict[str, str]:
+    return {"cluster": "us-east-1", "health": "green"}
+
+# 2. Create production FastAPI service with one unified call
+app = create_app(
+    title="AI Knowledge Gateway",
+    enable_rag_routes=True,     # Exposes POST /rag/query, POST /rag/retrieve, POST /rag/ingest, GET /rag/collections
+    rag_engine=rag,
+    mcp_server=mcp,             # Mounts MCP server over SSE
+    mcp_prefix="/mcp",          # Accessible at /mcp/sse and /mcp/messages/
+    mcp_api_key="secret-token", # Enforces Bearer / X-API-Key / ?api_key= auth
+)
+
+# Run with: uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
 ---
 
 ## 🧪 Running Tests
@@ -181,6 +214,6 @@ python -m pytest -v
 ## 🗺️ Upcoming Releases in the Release Train
 
 See [ROADMAP.md](ROADMAP.md) for full details.
-* **`v0.4.0-alpha`**: *FastAPI Service & Hybrid Endpoints* (REST API + Integrated MCP over SSE Gateway).
-* **`v0.5.0-alpha`**: *Autonomous Agents & Workflows*.
-* **`v0.6.0-alpha`**: *Observability, Evaluation & Gateway*.
+* **`v0.5.0-alpha`**: *Autonomous Agents & Workflows* (ReAct reasoning loops, long-term memory retrieval, token streaming).
+* **`v0.6.0-alpha`**: *Observability, Evaluation & Gateway* (Cost/token tracking, automatic model fallbacks, semantic caching).
+
