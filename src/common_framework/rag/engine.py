@@ -71,22 +71,30 @@ class RAGEngine:
             docs.append(Document(content=text, metadata=meta))
         return await self.ingest_documents(docs, splitter=splitter)
 
-    async def retrieve(self, query: str, top_k: int = 4) -> list[SearchResult]:
-        """Perform similarity search and return relevant document chunks."""
+    async def retrieve(
+        self,
+        query: str,
+        top_k: int = 4,
+        filter_metadata: Optional[dict[str, Any]] = None,
+    ) -> list[SearchResult]:
+        """Perform similarity search and return relevant document chunks with optional metadata filtering."""
         query_emb = await self.embedding_provider.embed_query(query)
-        return await self.vector_store.similarity_search(query_emb, top_k=top_k)
+        return await self.vector_store.similarity_search(
+            query_emb, top_k=top_k, filter_metadata=filter_metadata
+        )
 
     async def query(
         self,
         query: str,
         top_k: int = 4,
+        filter_metadata: Optional[dict[str, Any]] = None,
         system_prompt: Optional[str] = None,
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         **kwargs: Any,
     ) -> RAGResponse:
         """Retrieve relevant context and synthesize an answer using the LLM."""
-        results = await self.retrieve(query, top_k=top_k)
+        results = await self.retrieve(query, top_k=top_k, filter_metadata=filter_metadata)
 
         # Build context string
         context_parts = []
@@ -127,13 +135,14 @@ class RAGEngine:
         name: str = "search_knowledge_base",
         description: str = "Search the indexed knowledge base and retrieve relevant information for answering queries.",
         top_k: int = 4,
+        filter_metadata: Optional[dict[str, Any]] = None,
     ) -> Tool:
         """Export this RAG engine as a callable Tool compatible with MCP servers and agent workflows."""
         engine = self
 
         @tool(name=name, description=description)
         async def rag_tool(query: str) -> dict[str, Any]:
-            results = await engine.retrieve(query, top_k=top_k)
+            results = await engine.retrieve(query, top_k=top_k, filter_metadata=filter_metadata)
             snippets = [
                 {
                     "content": r.document.content,

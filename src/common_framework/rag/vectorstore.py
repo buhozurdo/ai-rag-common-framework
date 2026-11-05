@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+import json
 import math
 from abc import ABC, abstractmethod
-from typing import Optional
+from pathlib import Path
+from typing import Any, Optional, Union
 
 from common_framework.rag.models import Document, SearchResult
 
 
 def cosine_similarity(v1: list[float], v2: list[float]) -> float:
     """Compute cosine similarity between two vector lists."""
-    if len(v1) != len(v2) or not v1:
+    if not v1 or not v2:
         return 0.0
+
+    if len(v1) != len(v2):
+        raise ValueError(f"Vector dimension mismatch: query vector has {len(v1)} dims, document has {len(v2)} dims")
 
     dot_product = sum(a * b for a, b in zip(v1, v2))
     norm_v1 = math.sqrt(sum(a * a for a in v1))
@@ -36,9 +41,12 @@ class BaseVectorStore(ABC):
 
     @abstractmethod
     async def similarity_search(
-        self, query_embedding: list[float], top_k: int = 4
+        self,
+        query_embedding: list[float],
+        top_k: int = 4,
+        filter_metadata: Optional[dict[str, Any]] = None,
     ) -> list[SearchResult]:
-        """Retrieve the top_k most similar documents to the query vector."""
+        """Retrieve the top_k most similar documents to the query vector with optional metadata filtering."""
         pass
 
     @abstractmethod
@@ -68,13 +76,21 @@ class InMemoryVectorStore(BaseVectorStore):
         return added_ids
 
     async def similarity_search(
-        self, query_embedding: list[float], top_k: int = 4
+        self,
+        query_embedding: list[float],
+        top_k: int = 4,
+        filter_metadata: Optional[dict[str, Any]] = None,
     ) -> list[SearchResult]:
         if not self._documents or not query_embedding:
             return []
 
         scored: list[SearchResult] = []
         for doc in self._documents.values():
+            if filter_metadata:
+                matches = all(doc.metadata.get(k) == v for k, v in filter_metadata.items())
+                if not matches:
+                    continue
+
             if doc.embedding is not None:
                 sim = cosine_similarity(query_embedding, doc.embedding)
                 scored.append(SearchResult(document=doc, score=sim))
@@ -96,3 +112,27 @@ class InMemoryVectorStore(BaseVectorStore):
     def clear(self) -> None:
         """Remove all documents from memory."""
         self._documents.clear()
+
+    def save_to_json(self, filepath: Union[str, Path]) -> None:
+        """Serialize documents and embeddings to a local JSON file."""
+        target_path = Path(filepath)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        data = [doc.model_dump() for doc in self._documents.values()]
+        with open(target_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+    def load_from_json(self, filepath: Union[str, Path]) -> int:
+        """Load documents and embeddings from a local JSON file."""
+        source_path = Path(filepath)
+        if not source_path.exists():
+            raise FileNotFoundError(f"Vector store file not found: {source_path}")
+
+        with open(source_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        loaded_count = 0
+        for item in data:
+            doc = Document.model_validate(item)
+            self._documents[doc.id] = doc
+            loaded_count += 1
+        return loaded_count
