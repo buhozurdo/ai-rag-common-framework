@@ -76,11 +76,23 @@ class RAGEngine:
         query: str,
         top_k: int = 4,
         filter_metadata: Optional[dict[str, Any]] = None,
+        mode: str = "hybrid",
     ) -> list[SearchResult]:
-        """Perform similarity search and return relevant document chunks with optional metadata filtering."""
+        """Perform search returning relevant document chunks via hybrid (BM25 + vector) or dense mode."""
         query_emb = await self.embedding_provider.embed_query(query)
+
+        if mode == "hybrid":
+            return await self.vector_store.hybrid_search(
+                query_text=query,
+                query_embedding=query_emb,
+                top_k=top_k,
+                filter_metadata=filter_metadata,
+            )
+
         return await self.vector_store.similarity_search(
-            query_emb, top_k=top_k, filter_metadata=filter_metadata
+            query_embedding=query_emb,
+            top_k=top_k,
+            filter_metadata=filter_metadata,
         )
 
     async def query(
@@ -88,13 +100,16 @@ class RAGEngine:
         query: str,
         top_k: int = 4,
         filter_metadata: Optional[dict[str, Any]] = None,
+        mode: str = "hybrid",
         system_prompt: Optional[str] = None,
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         **kwargs: Any,
     ) -> RAGResponse:
         """Retrieve relevant context and synthesize an answer using the LLM."""
-        results = await self.retrieve(query, top_k=top_k, filter_metadata=filter_metadata)
+        results = await self.retrieve(
+            query, top_k=top_k, filter_metadata=filter_metadata, mode=mode
+        )
 
         # Build context string
         context_parts = []
@@ -136,13 +151,16 @@ class RAGEngine:
         description: str = "Search the indexed knowledge base and retrieve relevant information for answering queries.",
         top_k: int = 4,
         filter_metadata: Optional[dict[str, Any]] = None,
+        mode: str = "hybrid",
     ) -> Tool:
         """Export this RAG engine as a callable Tool compatible with MCP servers and agent workflows."""
         engine = self
 
         @tool(name=name, description=description)
         async def rag_tool(query: str) -> dict[str, Any]:
-            results = await engine.retrieve(query, top_k=top_k, filter_metadata=filter_metadata)
+            results = await engine.retrieve(
+                query, top_k=top_k, filter_metadata=filter_metadata, mode=mode
+            )
             snippets = [
                 {
                     "content": r.document.content,

@@ -1,5 +1,4 @@
-"""RAG module providing document splitting, vector embeddings, storage, and orchestration."""
-
+from common_framework.rag.bm25 import BM25Index, reciprocal_rank_fusion, tokenize
 from common_framework.rag.embeddings import (
     BaseEmbeddingProvider,
     EmbeddingFactory,
@@ -23,6 +22,9 @@ __all__ = [
     "Document",
     "SearchResult",
     "RAGResponse",
+    "BM25Index",
+    "reciprocal_rank_fusion",
+    "tokenize",
     "BaseTextSplitter",
     "CharacterTextSplitter",
     "RecursiveTextSplitter",
