@@ -57,5 +57,3 @@ htmlcov/
 *.sqlite3
 *.db
 
-# Local context/analysis notes
-.context/
