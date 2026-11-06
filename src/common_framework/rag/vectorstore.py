@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 from abc import ABC, abstractmethod
@@ -134,6 +135,14 @@ class InMemoryVectorStore(BaseVectorStore):
         self._matrix_cache: dict[str, Optional[tuple[list[str], Any]]] = {}
         self.use_numpy = _HAS_NUMPY if use_numpy is None else (use_numpy and _HAS_NUMPY)
         self.base_dir: Optional[Path] = Path(base_dir).resolve() if base_dir is not None else None
+        # Per-collection locks for coroutine/thread safety
+        self._locks: dict[str, asyncio.Lock] = {}
+
+    def _get_collection_lock(self, collection: str) -> asyncio.Lock:
+        """Retrieve or create an asyncio.Lock for isolated collection concurrency."""
+        if collection not in self._locks:
+            self._locks[collection] = asyncio.Lock()
+        return self._locks[collection]
 
     def _resolve_safe_path(
         self,
@@ -200,23 +209,24 @@ class InMemoryVectorStore(BaseVectorStore):
     async def add_documents(
         self, documents: list[Document], collection: str = DEFAULT_COLLECTION
     ) -> list[str]:
-        doc_store, bm25 = self._ensure_collection(collection)
-        norm_store = self._normalized_vectors[collection]
-        added_ids: list[str] = []
+        async with self._get_collection_lock(collection):
+            doc_store, bm25 = self._ensure_collection(collection)
+            norm_store = self._normalized_vectors[collection]
+            added_ids: list[str] = []
 
-        for doc in documents:
-            if doc.embedding is None:
-                raise ValueError(f"Document {doc.id!r} has no embedding. Generate embeddings before adding.")
-            doc_store[doc.id] = doc
-            unit_vec, _ = normalize_vector(doc.embedding)
-            norm_store[doc.id] = unit_vec
-            added_ids.append(doc.id)
+            for doc in documents:
+                if doc.embedding is None:
+                    raise ValueError(f"Document {doc.id!r} has no embedding. Generate embeddings before adding.")
+                doc_store[doc.id] = doc
+                unit_vec, _ = normalize_vector(doc.embedding)
+                norm_store[doc.id] = unit_vec
+                added_ids.append(doc.id)
 
-        bm25.add_documents(documents)
-        self._invalidate_matrix_cache(collection)
-        return added_ids
+            bm25.add_documents(documents)
+            self._invalidate_matrix_cache(collection)
+            return added_ids
 
-    async def similarity_search(
+    def _similarity_search_unlocked(
         self,
         query_embedding: list[float],
         top_k: int = 4,
@@ -300,6 +310,21 @@ class InMemoryVectorStore(BaseVectorStore):
         scored_py.sort(key=lambda x: x.score, reverse=True)
         return scored_py[:top_k]
 
+    async def similarity_search(
+        self,
+        query_embedding: list[float],
+        top_k: int = 4,
+        collection: str = DEFAULT_COLLECTION,
+        filter_metadata: Optional[dict[str, Any]] = None,
+    ) -> list[SearchResult]:
+        async with self._get_collection_lock(collection):
+            return self._similarity_search_unlocked(
+                query_embedding=query_embedding,
+                top_k=top_k,
+                collection=collection,
+                filter_metadata=filter_metadata,
+            )
+
     async def hybrid_search(
         self,
         query_text: str,
@@ -310,57 +335,62 @@ class InMemoryVectorStore(BaseVectorStore):
         sparse_weight: float = 0.5,
         filter_metadata: Optional[dict[str, Any]] = None,
     ) -> list[SearchResult]:
-        if collection not in self._collections:
-            return []
+        async with self._get_collection_lock(collection):
+            if collection not in self._collections:
+                return []
 
-        candidate_count = top_k * 3
+            candidate_count = top_k * 3
 
-        dense_results = await self.similarity_search(
-            query_embedding=query_embedding,
-            top_k=candidate_count,
-            collection=collection,
-            filter_metadata=filter_metadata,
-        )
+            dense_results = self._similarity_search_unlocked(
+                query_embedding=query_embedding,
+                top_k=candidate_count,
+                collection=collection,
+                filter_metadata=filter_metadata,
+            )
 
-        sparse_results = self._bm25_indexes[collection].search(
-            query=query_text,
-            top_k=candidate_count,
-            filter_metadata=filter_metadata,
-        )
+            sparse_results = self._bm25_indexes[collection].search(
+                query=query_text,
+                top_k=candidate_count,
+                filter_metadata=filter_metadata,
+            )
 
-        return reciprocal_rank_fusion(
-            dense_results=dense_results,
-            sparse_results=sparse_results,
-            k=60,
-            dense_weight=dense_weight,
-            sparse_weight=sparse_weight,
-            top_k=top_k,
-        )
+            return reciprocal_rank_fusion(
+                dense_results=dense_results,
+                sparse_results=sparse_results,
+                k=60,
+                dense_weight=dense_weight,
+                sparse_weight=sparse_weight,
+                top_k=top_k,
+            )
 
     async def delete(
         self, document_ids: list[str], collection: str = DEFAULT_COLLECTION
     ) -> None:
-        if collection in self._collections:
-            doc_store = self._collections[collection]
-            norm_store = self._normalized_vectors.get(collection, {})
-            for doc_id in document_ids:
-                doc_store.pop(doc_id, None)
-                norm_store.pop(doc_id, None)
-            self._bm25_indexes[collection].delete(document_ids)
-            self._invalidate_matrix_cache(collection)
+        async with self._get_collection_lock(collection):
+            if collection in self._collections:
+                doc_store = self._collections[collection]
+                norm_store = self._normalized_vectors.get(collection, {})
+                for doc_id in document_ids:
+                    doc_store.pop(doc_id, None)
+                    norm_store.pop(doc_id, None)
+                self._bm25_indexes[collection].delete(document_ids)
+                self._invalidate_matrix_cache(collection)
 
     async def delete_collection(self, collection: str) -> None:
-        self._collections.pop(collection, None)
-        self._bm25_indexes.pop(collection, None)
-        self._normalized_vectors.pop(collection, None)
-        self._matrix_cache.pop(collection, None)
+        async with self._get_collection_lock(collection):
+            self._collections.pop(collection, None)
+            self._bm25_indexes.pop(collection, None)
+            self._normalized_vectors.pop(collection, None)
+            self._matrix_cache.pop(collection, None)
+        self._locks.pop(collection, None)
 
     async def list_collections(self) -> list[str]:
         return list(self._collections.keys())
 
     async def count(self, collection: Optional[str] = None) -> int:
         if collection is not None:
-            return len(self._collections.get(collection, {}))
+            async with self._get_collection_lock(collection):
+                return len(self._collections.get(collection, {}))
         return sum(len(docs) for docs in self._collections.values())
 
     def get(self, document_id: str, collection: str = DEFAULT_COLLECTION) -> Optional[Document]:
@@ -373,6 +403,7 @@ class InMemoryVectorStore(BaseVectorStore):
         self._bm25_indexes.clear()
         self._normalized_vectors.clear()
         self._matrix_cache.clear()
+        self._locks.clear()
 
     def save_to_json(
         self,

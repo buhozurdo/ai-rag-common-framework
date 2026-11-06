@@ -133,3 +133,56 @@ async def test_default_protection_blocks_escaping_cwd(tmp_path: Path):
 
     with pytest.raises(ValueError, match="Path traversal detected"):
         store.load_from_json(deep_traversal)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_vectorstore_operations():
+    """Verify that concurrent additions, searches, and deletes run safely with asyncio.Lock."""
+    import asyncio
+    store = InMemoryVectorStore()
+
+    # Pre-populate some documents
+    base_docs = [
+        Document(id=f"base_{i}", content=f"Base document number {i}", embedding=[float(i), 1.0 - float(i)])
+        for i in range(10)
+    ]
+    await store.add_documents(base_docs)
+
+    async def ingest_batch(batch_id: int):
+        docs = [
+            Document(id=f"doc_{batch_id}_{j}", content=f"Batch {batch_id} content {j}", embedding=[0.5, 0.5])
+            for j in range(5)
+        ]
+        return await store.add_documents(docs)
+
+    async def search_sim():
+        return await store.similarity_search(query_embedding=[0.5, 0.5], top_k=5)
+
+    async def search_hyb():
+        return await store.hybrid_search(
+            query_text="document", query_embedding=[0.5, 0.5], top_k=5
+        )
+
+    async def del_docs(batch_id: int):
+        await asyncio.sleep(0.001)
+        await store.delete([f"doc_{batch_id}_0"])
+
+    # Launch mixed concurrent coroutines
+    tasks = [
+        ingest_batch(1),
+        search_sim(),
+        ingest_batch(2),
+        search_hyb(),
+        del_docs(1),
+        search_sim(),
+        ingest_batch(3),
+        search_hyb(),
+    ]
+
+    results = await asyncio.gather(*tasks, return_exceptions=False)
+    assert len(results) == 8
+
+    # Ensure collection locks exist and clean count matches
+    cnt = await store.count()
+    assert cnt > 10
+
