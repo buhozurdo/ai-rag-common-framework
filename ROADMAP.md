@@ -93,26 +93,51 @@ As the framework evolves, the pipeline relationship across channels progresses a
   * Pure-Python Okapi BM25 indexing and Reciprocal Rank Fusion (RRF) for hybrid retrieval (`mode="hybrid"`).
   * Multi-tenant collection isolation with independent BM25 statistics and multi-collection persistence.
   * Native mounting utility `mount_mcp_to_fastapi` with built-in `MCPAuthMiddleware` supporting Bearer, `X-API-Key`, and query parameter auth.
+* **Security Hardening & Bug Fixes (Consolidated):**
+  * Fixed CORS specification vulnerability (wildcard origin disabled credentials by default to prevent cross-origin credential theft).
+  * Hardened MCP auth middleware (query-param auth default changed to `False` to prevent key exposure in access logs).
+  * Corrected `cosine_similarity` rank inversion (uniform `[-1.0, 1.0]` mapping preventing negative scores from outranking orthogonal vectors).
+  * Prevented vector store data loss on corrupt JSON in `load_from_json` via pre-validation.
+  * Fixed BM25 duplicate document frequency accumulation during document re-indexing (upsert semantics).
+  * Enforced validation on retrieval modes in `RAGEngine.retrieve` (raising `ValueError` on unknown modes).
+  * Handled empty choices and `message=None` in LLM client without crashing.
+  * Added RFC 7235 `WWW-Authenticate: Bearer` challenge header to HTTP 401 responses.
+  * Suppressed internal exception details in production responses.
+  * Expanded regression test suite to 103 automated tests (44 new edge-case and security tests).
 
 ---
 
-### 🔹 v0.5.0 — "Autonomous Agents & Workflows"
-* **Objective:** Lightweight autonomous agents orchestrating Tools and RAG.
-* **Features:**
-  * ReAct (Reasoning + Action) execution loop without heavyweight framework overhead.
-  * Short-term conversation buffer and long-term semantic memory retrieval via RAG.
-  * Native Server-Sent Events (SSE) streaming for step-by-step token generation.
-  * Human-in-the-loop confirmation hooks for sensitive tools.
+### 🔹 v0.5.0 — "Autonomous Agents, Fallbacks & Hardening (Bloque C)"
+* **Objective:** Multi-provider resilience, streaming generation, autonomous agent workflows, and core text-splitting hardening.
+* **Tracked Tasks & Features:**
+  * **Bloque C Core:**
+    * Multi-provider model fallbacks with automatic failover on quota exhaustion (HTTP 429 / 503).
+    * Native Server-Sent Events (SSE) streaming for step-by-step token generation.
+    * Semantic caching for repetitive query deduplication.
+  * **Text Splitters Hardening:**
+    * Implement sliding window `chunk_overlap` in `CharacterTextSplitter`.
+    * Fix chunk ordering in `RecursiveTextSplitter` on oversized sub-chunk recursion.
+  * **Security & Isolation:**
+    * Path traversal validation in VectorStore persistence (`save_to_json` / `load_from_json`).
+    * Structured XML tagging for context injection in RAG synthesis to mitigate indirect prompt injection.
+    * Secret masking using `pydantic.SecretStr` in `Settings`.
+  * **Concurrency & Resource Management:**
+    * Thread/coroutine safety locks for `InMemoryVectorStore`.
+    * Non-blocking async execution for synchronous tools via `asyncio.to_thread`.
+    * Shared persistent `httpx.AsyncClient` lifecycle to eliminate socket descriptor exhaustion.
+  * **Agent Framework:**
+    * Lightweight ReAct (Reasoning + Action) execution loop.
+    * Short-term conversation buffer and long-term semantic memory retrieval via RAG.
+    * Human-in-the-loop confirmation hooks for sensitive tools.
 
 ---
 
 ### 🔹 v0.6.0 — "Observability, Evaluation & Gateway"
-* **Objective:** Production telemetry, model fallbacks, and answer quality evaluation.
+* **Objective:** Production telemetry, advanced metrics, and answer quality evaluation.
 * **Features:**
   * Token & cost tracking per request and provider.
-  * Model fallbacks with automatic failover on quota exhaustion (HTTP 429).
-  * Semantic caching to reduce repetitive latency and API costs.
   * Lightweight RAG evaluation metrics (Context Relevance, Groundedness, Answer Relevance).
+  * Guardrails & content moderation filters.
 
 ---
 
