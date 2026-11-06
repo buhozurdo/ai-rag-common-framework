@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, AsyncIterator, Optional, TYPE_CHECKING
+from typing import Any, AsyncIterator, Iterable, Optional, TYPE_CHECKING, Union
 
 from common_framework.core.llm import (
     BaseLLMClient,
@@ -50,26 +50,43 @@ class RAGEngine:
 
     async def ingest_documents(
         self,
-        documents: list[Document],
+        documents: Union[list[Document], Iterable[Document]],
         collection: str = "default",
         splitter: Optional[BaseTextSplitter] = None,
+        batch_size: int = 100,
     ) -> list[str]:
-        """Split documents, compute vector embeddings, and store them into a specific collection."""
+        """Split documents lazily in batches, compute embeddings, and store them."""
         active_splitter = splitter or self.default_splitter
-        chunks = active_splitter.split_documents(documents) if active_splitter else documents
+        chunk_stream: Iterable[Document] = (
+            active_splitter.split_documents_stream(documents)
+            if active_splitter
+            else documents
+        )
 
-        if not chunks:
-            return []
+        all_added_ids: list[str] = []
+        batch: list[Document] = []
 
-        texts = [c.content for c in chunks]
-        embeddings = await self.embedding_provider.embed_documents(texts)
+        for chunk in chunk_stream:
+            batch.append(chunk)
+            if len(batch) >= batch_size:
+                texts = [c.content for c in batch]
+                embeddings = await self.embedding_provider.embed_documents(texts)
+                for c, emb in zip(batch, embeddings):
+                    c.embedding = emb
+                added = await self.vector_store.add_documents(batch, collection=collection)
+                all_added_ids.extend(added)
+                batch.clear()
 
-        for chunk, emb in zip(chunks, embeddings):
-            chunk.embedding = emb
+        if batch:
+            texts = [c.content for c in batch]
+            embeddings = await self.embedding_provider.embed_documents(texts)
+            for c, emb in zip(batch, embeddings):
+                c.embedding = emb
+            added = await self.vector_store.add_documents(batch, collection=collection)
+            all_added_ids.extend(added)
 
-        added_ids = await self.vector_store.add_documents(chunks, collection=collection)
-        logger.info("Ingested %d document chunks into collection %r.", len(added_ids), collection)
-        return added_ids
+        logger.info("Ingested %d document chunks into collection %r.", len(all_added_ids), collection)
+        return all_added_ids
 
     async def ingest_texts(
         self,
