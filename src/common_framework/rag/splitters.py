@@ -148,6 +148,14 @@ class RecursiveTextSplitter(BaseTextSplitter):
 
         for piece in splits:
             if len(piece) > self.chunk_size and next_separators:
+                # Flush any accumulated text before processing the oversized piece to maintain order
+                if current_chunk:
+                    chunk_text = active_sep.join(current_chunk).strip()
+                    if chunk_text:
+                        chunks.append(chunk_text)
+                    current_chunk = []
+                    current_length = 0
+
                 # Sub-split oversized piece recursively
                 sub_chunks = self._split(piece, next_separators)
                 for sub in sub_chunks:
@@ -166,19 +174,35 @@ class RecursiveTextSplitter(BaseTextSplitter):
                     if chunk_text:
                         chunks.append(chunk_text)
                     # Handle overlap by taking tail elements from previous chunk
-                    overlap_elements: list[str] = []
-                    overlap_len = 0
-                    for item in reversed(current_chunk):
-                        if overlap_len + len(item) <= self.chunk_overlap:
-                            overlap_elements.insert(0, item)
-                            overlap_len += len(item)
-                        else:
-                            break
-                    current_chunk = overlap_elements
-                    current_length = sum(len(x) for x in current_chunk)
+                    if self.chunk_overlap > 0:
+                        overlap_elements: list[str] = []
+                        overlap_len = 0
+                        for item in reversed(current_chunk):
+                            item_sep = len(active_sep) if overlap_elements else 0
+                            if overlap_len + item_sep + len(item) <= self.chunk_overlap:
+                                overlap_elements.insert(0, item)
+                                overlap_len += item_sep + len(item)
+                            else:
+                                break
 
+                        # Trim overlap elements from left if combined with piece they exceed chunk_size
+                        new_sep_len = len(active_sep) if overlap_elements else 0
+                        while overlap_elements and (overlap_len + new_sep_len + piece_len > self.chunk_size):
+                            popped = overlap_elements.pop(0)
+                            overlap_len -= len(popped)
+                            if overlap_elements:
+                                overlap_len -= len(active_sep)
+                            new_sep_len = len(active_sep) if overlap_elements else 0
+
+                        current_chunk = list(overlap_elements)
+                        current_length = overlap_len
+                    else:
+                        current_chunk = []
+                        current_length = 0
+
+                sep_len = len(active_sep) if current_chunk else 0
                 current_chunk.append(piece)
-                current_length += len(piece)
+                current_length += sep_len + piece_len
 
         if current_chunk:
             chunk_text = active_sep.join(current_chunk).strip()
