@@ -29,8 +29,18 @@ Fourth major stable release (GA) of the framework. Delivers production-grade web
   * Zero-bloat Okapi BM25 indexing in pure Python combined with dense vector retrieval via Reciprocal Rank Fusion ($k=60$).
 * **Multi-Tenant Collection Isolation:**
   * Strict statistical BM25 term frequency separation and multi-collection JSON persistence in `InMemoryVectorStore`.
+* **Security Hardening & Bug Fixes:**
+  * **CORS Specification Vulnerability:** Fixed `allow_credentials=True` combined with wildcard origin (`*`), dynamically restricting credentials to explicit allowed origins.
+  * **MCP Auth Credential Leak:** Changed `allow_query_param_auth` default to `False` to prevent API keys leaking in web server and proxy logs.
+  * **Cosine Similarity Ranking Inversion:** Corrected continuous mapping to `(score + 1.0) / 2.0` across the entire `[-1.0, 1.0]` range to preserve rank order.
+  * **Vector Store Persistence Safety:** Pre-validated JSON documents prior to clearing in-memory collections in `load_from_json`, preventing data loss on corrupted files.
+  * **BM25 Upsert Semantics:** Fixed double-counting of document frequencies when re-indexing documents with existing IDs.
+  * **RAG Mode Validation:** Enforced explicit validation in `RAGEngine.retrieve`, raising `ValueError` on unknown search modes.
+  * **LLM Client Resilience:** Handled empty choices `[]` and `message=None` safely without `IndexError` or `AttributeError`.
+  * **HTTP 401 Challenge:** Added RFC 7235 `WWW-Authenticate: Bearer` challenge header to authentication exception responses.
+  * **Production Information Leak Prevention:** Suppressed internal `raw_output` and `details` from error response bodies in production environment.
 * **Comprehensive Quality & Verification:**
-  * 59 automated unit and integration tests passing at 100%.
+  * 103 automated unit, integration, and security regression tests passing at 100% (expanded with 44 new edge-case tests).
 
 ---
 
