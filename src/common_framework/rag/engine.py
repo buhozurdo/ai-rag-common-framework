@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, AsyncIterator, Optional
+from typing import Any, AsyncIterator, Optional, TYPE_CHECKING
 
 from common_framework.core.llm import (
     BaseLLMClient,
@@ -11,12 +11,16 @@ from common_framework.core.llm import (
     ChatStreamChunk,
     LLMFactory,
     Role,
+    TokenUsage,
 )
 from common_framework.rag.embeddings import BaseEmbeddingProvider, EmbeddingFactory
 from common_framework.rag.models import Document, RAGResponse, SearchResult
 from common_framework.rag.splitters import BaseTextSplitter, RecursiveTextSplitter
 from common_framework.rag.vectorstore import BaseVectorStore, InMemoryVectorStore
 from common_framework.tools.base import Tool, tool
+
+if TYPE_CHECKING:
+    from common_framework.core.cache import SemanticCache
 
 logger = logging.getLogger("common_framework.rag")
 
@@ -36,11 +40,13 @@ class RAGEngine:
         embedding_provider: Optional[BaseEmbeddingProvider] = None,
         llm_client: Optional[BaseLLMClient] = None,
         default_splitter: Optional[BaseTextSplitter] = None,
+        cache: Optional[SemanticCache] = None,
     ) -> None:
         self.vector_store = vector_store or InMemoryVectorStore()
         self.embedding_provider = embedding_provider or EmbeddingFactory.create("mock")
         self.llm_client = llm_client or LLMFactory.create()
         self.default_splitter = default_splitter or RecursiveTextSplitter()
+        self.cache = cache
 
     async def ingest_documents(
         self,
@@ -122,6 +128,23 @@ class RAGEngine:
         **kwargs: Any,
     ) -> RAGResponse:
         """Retrieve relevant context and synthesize an answer using the LLM."""
+        if self.cache is not None:
+            hit = await self.cache.get(query=query, namespace=collection)
+            if hit is not None:
+                if isinstance(hit.response, RAGResponse):
+                    return RAGResponse(
+                        answer=hit.response.answer,
+                        sources=hit.response.sources,
+                        model=f"{hit.response.model} (cached)",
+                        usage=TokenUsage(),
+                    )
+                return RAGResponse(
+                    answer=str(hit.response),
+                    sources=[],
+                    model=f"{model or 'model'} (cached)",
+                    usage=TokenUsage(),
+                )
+
         results = await self.retrieve(
             query, top_k=top_k, collection=collection, filter_metadata=filter_metadata, mode=mode
         )
@@ -153,12 +176,22 @@ class RAGEngine:
             **kwargs,
         )
 
-        return RAGResponse(
+        rag_response = RAGResponse(
             answer=llm_response.content,
             sources=results,
             model=llm_response.model,
             usage=llm_response.usage,
         )
+
+        if self.cache is not None:
+            await self.cache.set(
+                query=query,
+                response=rag_response,
+                namespace=collection,
+                metadata={"model": rag_response.model},
+            )
+
+        return rag_response
 
     async def query_stream(
         self,
@@ -173,6 +206,17 @@ class RAGEngine:
         **kwargs: Any,
     ) -> AsyncIterator[ChatStreamChunk]:
         """Retrieve relevant context and stream the synthesized answer token-by-token."""
+        if self.cache is not None:
+            hit = await self.cache.get(query=query, namespace=collection)
+            if hit is not None:
+                content = hit.response.answer if isinstance(hit.response, RAGResponse) else str(hit.response)
+                yield ChatStreamChunk(
+                    delta=content,
+                    model=f"{model or 'model'} (cached)",
+                    finish_reason="stop",
+                )
+                return
+
         results = await self.retrieve(
             query, top_k=top_k, collection=collection, filter_metadata=filter_metadata, mode=mode
         )
@@ -196,13 +240,30 @@ class RAGEngine:
             ChatMessage(role=Role.USER, content=user_message_content),
         ]
 
+        collected: list[str] = []
         async for chunk in self.llm_client.complete_stream(
             messages=messages,
             model=model,
             temperature=temperature if temperature is not None else 0.0,
             **kwargs,
         ):
+            if chunk.delta:
+                collected.append(chunk.delta)
             yield chunk
+
+        if self.cache is not None and collected:
+            full_response = RAGResponse(
+                answer="".join(collected),
+                sources=results,
+                model=model or "streamed-model",
+                usage=TokenUsage(),
+            )
+            await self.cache.set(
+                query=query,
+                response=full_response,
+                namespace=collection,
+                metadata={"model": full_response.model},
+            )
 
     def as_tool(
         self,

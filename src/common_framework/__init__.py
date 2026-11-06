@@ -6,6 +6,13 @@ with minimal boilerplate.
 """
 
 from common_framework.core.config import Settings, get_settings
+from common_framework.core.cache import (
+    CachedLLMClient,
+    SemanticCache,
+    SemanticCacheEntry,
+    SemanticCacheHit,
+    SemanticCacheStats,
+)
 from common_framework.core.exceptions import (
     AllProvidersFailedError,
     AuthenticationError,
@@ -84,6 +91,11 @@ __all__ = [
     "TokenUsage",
     "Role",
     "LLMFactory",
+    "CachedLLMClient",
+    "SemanticCache",
+    "SemanticCacheEntry",
+    "SemanticCacheHit",
+    "SemanticCacheStats",
     "Tool",
     "ToolExecutionError",
     "tool",
