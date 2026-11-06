@@ -1,8 +1,8 @@
 """Centralized configuration system based on pydantic-settings."""
 
 from functools import lru_cache
-from typing import Literal, Optional
-from pydantic import Field
+from typing import Any, Literal, Optional
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -58,6 +58,19 @@ class Settings(BaseSettings):
         alias="DEFAULT_MAX_RETRIES",
         description="Maximum retry attempts on transient network/quota failures",
     )
+    fallback_providers: list[str] = Field(
+        default_factory=list,
+        alias="FALLBACK_PROVIDERS",
+        description="Ordered list of secondary LLM providers to fail over to on errors",
+    )
+
+    @field_validator("fallback_providers", mode="before")
+    @classmethod
+    def _parse_fallback_providers(cls, value: Any) -> list[str]:
+        if isinstance(value, str):
+            parts = [p.strip() for p in value.split(",") if p.strip()]
+            return parts
+        return list(value) if value is not None else []
 
     # API Keys & Endpoints
     gemini_api_key: Optional[str] = Field(
@@ -79,6 +92,11 @@ class Settings(BaseSettings):
         default=None,
         alias="ANTHROPIC_API_KEY",
         description="Anthropic API Key",
+    )
+    anthropic_base_url: str = Field(
+        default="https://api.anthropic.com/v1",
+        alias="ANTHROPIC_BASE_URL",
+        description="Base URL for Anthropic Messages API",
     )
     ollama_base_url: str = Field(
         default="http://localhost:11434",
