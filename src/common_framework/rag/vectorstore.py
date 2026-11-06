@@ -119,7 +119,11 @@ class InMemoryVectorStore(BaseVectorStore):
     and opportunistic NumPy/BLAS GEMV matrix multiplication acceleration.
     """
 
-    def __init__(self, use_numpy: Optional[bool] = None) -> None:
+    def __init__(
+        self,
+        use_numpy: Optional[bool] = None,
+        base_dir: Optional[Union[str, Path]] = None,
+    ) -> None:
         # Partitioned storage: collection_name -> (doc_id -> Document)
         self._collections: dict[str, dict[str, Document]] = {}
         # Partitioned BM25 index: collection_name -> BM25Index
@@ -129,6 +133,58 @@ class InMemoryVectorStore(BaseVectorStore):
         # Matrix cache for BLAS GEMV: collection_name -> (doc_ids_list, np.ndarray)
         self._matrix_cache: dict[str, Optional[tuple[list[str], Any]]] = {}
         self.use_numpy = _HAS_NUMPY if use_numpy is None else (use_numpy and _HAS_NUMPY)
+        self.base_dir: Optional[Path] = Path(base_dir).resolve() if base_dir is not None else None
+
+    def _resolve_safe_path(
+        self,
+        filepath: Union[str, Path],
+        base_dir: Optional[Union[str, Path]] = None,
+    ) -> Path:
+        """Resolve and validate filepath against a designated base directory.
+
+        Ensures the target filepath does not escape the allowed base directory via
+        path traversal (e.g. `../` or external absolute paths).
+
+        Args:
+            filepath: Target file path (relative or absolute).
+            base_dir: Optional override for the designated base directory. If None,
+                `self.base_dir` is used. If neither is set, relative paths are validated
+                against `Path.cwd()` to prevent escaping the working directory.
+
+        Returns:
+            Resolved absolute Path.
+
+        Raises:
+            ValueError: If the resolved path lies outside the designated base directory.
+        """
+        raw_path = Path(filepath)
+        designated = base_dir if base_dir is not None else self.base_dir
+
+        if designated is not None:
+            resolved_base = Path(designated).resolve()
+            if not raw_path.is_absolute():
+                candidate = (resolved_base / raw_path).resolve()
+            else:
+                candidate = raw_path.resolve()
+
+            if not candidate.is_relative_to(resolved_base):
+                raise ValueError(
+                    f"Path traversal detected: '{filepath}' resolves to '{candidate}', "
+                    f"which is outside designated base directory '{resolved_base}'"
+                )
+            return candidate
+
+        # No base_dir designated: protect cwd from relative traversal
+        if not raw_path.is_absolute():
+            candidate = (Path.cwd() / raw_path).resolve()
+            if not candidate.is_relative_to(Path.cwd()):
+                raise ValueError(
+                    f"Path traversal detected: '{filepath}' resolves to '{candidate}', "
+                    f"which is outside current working directory '{Path.cwd()}'"
+                )
+            return candidate
+
+        return raw_path.resolve()
 
     def _ensure_collection(self, collection: str) -> tuple[dict[str, Document], BM25Index]:
         if collection not in self._collections:
@@ -318,9 +374,26 @@ class InMemoryVectorStore(BaseVectorStore):
         self._normalized_vectors.clear()
         self._matrix_cache.clear()
 
-    def save_to_json(self, filepath: Union[str, Path]) -> None:
-        """Serialize all collections, documents, and embeddings to a local JSON file."""
-        target_path = Path(filepath)
+    def save_to_json(
+        self,
+        filepath: Union[str, Path],
+        base_dir: Optional[Union[str, Path]] = None,
+    ) -> Path:
+        """Serialize all collections, documents, and embeddings to a local JSON file.
+
+        Args:
+            filepath: Destination file path (relative to base_dir or absolute).
+            base_dir: Optional base directory to restrict file writing to. If not
+                specified, uses instance `self.base_dir` if configured, or validates
+                against working directory to prevent path traversal.
+
+        Returns:
+            The resolved target Path where data was written.
+
+        Raises:
+            ValueError: If filepath violates path traversal restrictions.
+        """
+        target_path = self._resolve_safe_path(filepath, base_dir=base_dir)
         target_path.parent.mkdir(parents=True, exist_ok=True)
         serialized: dict[str, list[dict[str, Any]]] = {}
 
@@ -330,15 +403,34 @@ class InMemoryVectorStore(BaseVectorStore):
         with open(target_path, "w", encoding="utf-8") as f:
             json.dump(serialized, f, indent=2, ensure_ascii=False)
 
-    def load_from_json(self, filepath: Union[str, Path]) -> int:
+        return target_path
+
+    def load_from_json(
+        self,
+        filepath: Union[str, Path],
+        base_dir: Optional[Union[str, Path]] = None,
+    ) -> int:
         """Load collections and documents from a local JSON file and rebuild all indexes.
 
         Parses and validates all data before clearing in-memory state to prevent data loss
         on corrupt or malformed input files.
+
+        Args:
+            filepath: Source file path (relative to base_dir or absolute).
+            base_dir: Optional base directory to restrict file reading from. If not
+                specified, uses instance `self.base_dir` if configured, or validates
+                against working directory to prevent path traversal.
+
+        Returns:
+            Total number of documents loaded across all collections.
+
+        Raises:
+            ValueError: If filepath violates path traversal restrictions or file is malformed.
+            FileNotFoundError: If the resolved file does not exist.
         """
         import json as _json  # already imported at module level; alias avoids shadowing
 
-        source_path = Path(filepath)
+        source_path = self._resolve_safe_path(filepath, base_dir=base_dir)
         if not source_path.exists():
             raise FileNotFoundError(f"Vector store file not found: {source_path}")
 
