@@ -6,6 +6,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.5.0-alpha] - 2026-11-05
+
+### Release Title:
+### ⚡ `v0.5.0-alpha: Multi-Provider Fallbacks, Real-Time SSE Streaming & In-Memory Semantic Caching (Bloque C)`
+
+### Summary:
+Alpha release completing **Bloque C** of the Release Train. Introduces resilient multi-provider LLM failover, end-to-end token streaming over Server-Sent Events (SSE) across LLM clients, RAGEngine, and FastAPI endpoints, plus zero-dependency in-memory semantic caching with cosine similarity, LRU eviction, and TTL expiration.
+
+---
+
+### 🌟 Key Highlights & Consolidated Features:
+* **Multi-Provider Fallback Engine (`core/llm.py`):**
+  * `FallbackLLMClient`: Orchestrates transparent failovers through an ordered list of providers/models (`FallbackCandidate`).
+  * Automatic failover trigger on transient provider errors (HTTP 429 RateLimit, HTTP 503 Service Unavailable, connection timeouts) without breaking callers.
+  * Non-failover propagation: Client-side errors (e.g. invalid requests, authentication failures) are raised immediately without burning backup credits.
+  * `AllProvidersFailedError`: Structured error payload collecting reasons across all exhausted candidates if every fallback fails.
+  * Native `AnthropicClient`: Direct integration with Anthropic Messages API (`claude-3-5-sonnet-20241022`, `claude-3-opus`, `claude-3-haiku`), system prompts, and structured output parsing.
+  * Factory support: `LLMFactory.create_with_fallbacks()` and declarative `FALLBACK_PROVIDERS` configuration in `Settings`.
+* **End-to-End SSE Streaming (`complete_stream`, `query_stream`, `/rag/query/stream`):**
+  * `ChatStreamChunk`: Standardized streaming chunk model with `delta`, `model`, `finish_reason`, and metadata.
+  * Streaming across all clients: `OpenAICompatibleClient`, `AnthropicClient`, and `FallbackLLMClient` with graceful single-chunk fallback on `BaseLLMClient`.
+  * `RAGEngine.query_stream()`: Retrieves relevant context chunks and streams LLM synthesis token-by-token.
+  * FastAPI SSE Endpoint: `POST /rag/query/stream` yielding `text/event-stream` Server-Sent Events with structured SSE data frames.
+* **In-Memory Semantic Caching (`core/cache.py`):**
+  * Zero-dependency pure Python vector cache avoiding external database requirements.
+  * Continuous cosine similarity metric with configurable similarity threshold (default: 0.90).
+  * Least-Recently-Used (LRU) eviction and time-to-live (TTL) expiration.
+  * Multi-tenant namespace partitioning (e.g. per collection or model) to prevent cache collisions.
+  * `CachedLLMClient`: Transparent wrapper for any `BaseLLMClient` caching both standard and streaming completions.
+  * Direct integration into `RAGEngine` (`query` and `query_stream`).
+* **Test Suite Expansion:**
+  * 134 automated unit, integration, and security regression tests passing with 100% pass rate.
+
+---
+
 ## [v0.4.0] - 2026-11-05
 
 ### Release Title:
