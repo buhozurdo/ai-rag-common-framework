@@ -78,6 +78,31 @@ def test_recursive_splitter_and_documents():
         assert c.metadata["topic"] == "ai"
 
 
+def test_recursive_splitter_preserves_order_with_oversized_piece():
+    """Verify RecursiveTextSplitter does not reorder text when an oversized piece is sub-split."""
+    p1 = "Paragraph 1: Introduction and overview."
+    p2_oversized = "Paragraph 2 is huge. " + ("Detailed point with sentences. " * 15)
+    p3 = "Paragraph 3: Final conclusion."
+    full_text = f"{p1}\n\n{p2_oversized}\n\n{p3}"
+
+    splitter = RecursiveTextSplitter(chunk_size=80, chunk_overlap=15)
+    chunks = splitter.split_text(full_text)
+
+    # First chunk must contain paragraph 1
+    assert "Paragraph 1: Introduction" in chunks[0]
+    # Paragraph 1 and Paragraph 3 must NOT be joined together in the same chunk
+    for c in chunks:
+        if "Paragraph 1:" in c:
+            assert "Paragraph 3:" not in c
+
+    # Middle chunks must contain the sub-chunks of the oversized paragraph 2
+    middle_text = " ".join(chunks[1:-1])
+    assert "Paragraph 2 is huge" in middle_text
+
+    # The last chunk must contain paragraph 3
+    assert "Paragraph 3: Final conclusion" in chunks[-1]
+
+
 @pytest.mark.asyncio
 async def test_mock_embedding_provider():
     """Verify MockEmbeddingProvider generates normalized deterministic vectors."""
