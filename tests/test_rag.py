@@ -25,6 +25,45 @@ def test_character_splitter():
     assert chunks[2] == "Paragraph 3"
 
 
+def test_character_splitter_with_chunk_overlap():
+    """Verify CharacterTextSplitter respects chunk_overlap across successive chunks."""
+    text = "Section 1: Intro\n\nSection 2: Body\n\nSection 3: Details\n\nSection 4: Conclusion"
+    # Each section is ~15-21 chars. With chunk_size=45 and chunk_overlap=20:
+    splitter = CharacterTextSplitter(separator="\n\n", chunk_size=45, chunk_overlap=20)
+    chunks = splitter.split_text(text)
+
+    # Chunk 1: Section 1 + Section 2
+    # Chunk 2: Section 2 (overlapped) + Section 3
+    # Chunk 3: Section 3 (overlapped) + Section 4
+    assert len(chunks) == 3
+    assert "Section 2: Body" in chunks[0]
+    assert "Section 2: Body" in chunks[1]
+    assert "Section 3: Details" in chunks[1]
+    assert "Section 3: Details" in chunks[2]
+
+    # Verify all chunks strictly respect chunk_size
+    for c in chunks:
+        assert len(c) <= 45
+
+
+def test_character_splitter_empty_separator_and_validation():
+    """Verify CharacterTextSplitter with empty separator and parameter bounds validation."""
+    with pytest.raises(ValueError, match="chunk_size must be positive"):
+        CharacterTextSplitter(chunk_size=0)
+
+    with pytest.raises(ValueError, match="chunk_overlap must be non-negative"):
+        CharacterTextSplitter(chunk_size=10, chunk_overlap=-1)
+
+    with pytest.raises(ValueError, match="chunk_overlap.*must be strictly less than chunk_size"):
+        CharacterTextSplitter(chunk_size=10, chunk_overlap=10)
+
+    # Empty separator character sliding window
+    splitter = CharacterTextSplitter(separator="", chunk_size=5, chunk_overlap=2)
+    chunks = splitter.split_text("ABCDEFG")
+    assert chunks[0] == "ABCDE"
+    assert chunks[1] == "DEFG"
+
+
 def test_recursive_splitter_and_documents():
     """Verify RecursiveTextSplitter and document metadata tracking."""
     text = "Machine learning is a subset of AI.\n\nDeep learning uses neural networks.\n\nTransformers revolutionized NLP."

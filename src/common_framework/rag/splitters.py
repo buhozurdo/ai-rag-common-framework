@@ -13,6 +13,10 @@ class BaseTextSplitter(ABC):
     """Abstract base class for all text splitters."""
 
     def __init__(self, chunk_size: int = 500, chunk_overlap: int = 50) -> None:
+        if chunk_size <= 0:
+            raise ValueError(f"chunk_size must be positive, got {chunk_size}")
+        if chunk_overlap < 0:
+            raise ValueError(f"chunk_overlap must be non-negative, got {chunk_overlap}")
         if chunk_overlap >= chunk_size:
             raise ValueError(
                 f"chunk_overlap ({chunk_overlap}) must be strictly less than chunk_size ({chunk_size})"
@@ -54,7 +58,7 @@ class CharacterTextSplitter(BaseTextSplitter):
         if not text:
             return []
 
-        splits = text.split(self.separator)
+        splits = text.split(self.separator) if self.separator != "" else list(text)
         chunks: list[str] = []
         current_chunk: list[str] = []
         current_length = 0
@@ -69,8 +73,35 @@ class CharacterTextSplitter(BaseTextSplitter):
             else:
                 if current_chunk:
                     chunks.append(self.separator.join(current_chunk))
-                current_chunk = [piece]
-                current_length = piece_len
+                    if self.chunk_overlap > 0:
+                        overlap_elements: list[str] = []
+                        overlap_len = 0
+                        for item in reversed(current_chunk):
+                            item_sep = len(self.separator) if overlap_elements else 0
+                            if overlap_len + item_sep + len(item) <= self.chunk_overlap:
+                                overlap_elements.insert(0, item)
+                                overlap_len += item_sep + len(item)
+                            else:
+                                break
+
+                        # Trim overlap elements from the left if combined with piece they exceed chunk_size
+                        new_sep_len = len(self.separator) if overlap_elements else 0
+                        while overlap_elements and (overlap_len + new_sep_len + piece_len > self.chunk_size):
+                            popped = overlap_elements.pop(0)
+                            overlap_len -= len(popped)
+                            if overlap_elements:
+                                overlap_len -= len(self.separator)
+                            new_sep_len = len(self.separator) if overlap_elements else 0
+
+                        current_chunk = list(overlap_elements)
+                        current_length = overlap_len
+                    else:
+                        current_chunk = []
+                        current_length = 0
+
+                sep_len = len(self.separator) if current_chunk else 0
+                current_chunk.append(piece)
+                current_length += sep_len + piece_len
 
         if current_chunk:
             chunks.append(self.separator.join(current_chunk))
