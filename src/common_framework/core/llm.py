@@ -7,7 +7,7 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any, Generic, Literal, Optional, Sequence, TypeVar, Union
+from typing import Any, AsyncIterator, Generic, Literal, Optional, Sequence, TypeVar, Union
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -77,6 +77,15 @@ class ChatResponse(BaseModel):
     )
 
 
+class ChatStreamChunk(BaseModel):
+    """A single token delta chunk emitted during continuous generation."""
+
+    delta: str = ""
+    model: Optional[str] = None
+    finish_reason: Optional[str] = None
+    usage: Optional[TokenUsage] = None
+
+
 class BaseLLMClient(ABC):
     """Abstract base class for all LLM provider clients."""
 
@@ -105,6 +114,32 @@ class BaseLLMClient(ABC):
     ) -> T:
         """Execute a completion and validate the response against a Pydantic schema."""
         pass
+
+    async def complete_stream(
+        self,
+        messages: list[ChatMessage],
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatStreamChunk]:
+        """Execute a streaming completion yielding token chunks asynchronously.
+
+        Default implementation falls back to complete() and yields the full response as a chunk.
+        Subclasses override this to provide real-time token-by-token streaming.
+        """
+        response = await self.complete(
+            messages=messages,
+            model=model,
+            temperature=temperature,
+            **kwargs,
+        )
+        yield ChatStreamChunk(
+            delta=response.content,
+            model=response.model,
+            usage=response.usage,
+            finish_reason="stop",
+        )
+
 
 
 class OpenAICompatibleClient(BaseLLMClient):
@@ -294,6 +329,98 @@ class OpenAICompatibleClient(BaseLLMClient):
                 f"Failed to validate model response into {response_model.__name__}: {exc}",
                 raw_output=response.content,
             ) from exc
+
+    async def complete_stream(
+        self,
+        messages: list[ChatMessage],
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatStreamChunk]:
+        target_model = model or self.settings.default_model
+        target_temp = (
+            temperature if temperature is not None else self.settings.default_temperature
+        )
+
+        payload: dict[str, Any] = {
+            "model": target_model,
+            "messages": [m.to_dict() for m in messages],
+            "temperature": target_temp,
+            "stream": True,
+            **kwargs,
+        }
+
+        url = f"{self.base_url}/chat/completions"
+        headers = self._get_headers()
+
+        async def _stream(http_client: httpx.AsyncClient) -> AsyncIterator[ChatStreamChunk]:
+            try:
+                async with http_client.stream(
+                    "POST",
+                    url,
+                    json=payload,
+                    headers=headers,
+                    timeout=self.settings.default_timeout_seconds,
+                ) as response:
+                    if response.status_code >= 400:
+                        await response.aread()
+                        self._handle_http_error(
+                            httpx.HTTPStatusError(
+                                f"Streaming request failed with status {response.status_code}",
+                                request=response.request,
+                                response=response,
+                            )
+                        )
+
+                    async for line in response.aiter_lines():
+                        line = line.strip()
+                        if not line or not line.startswith("data:"):
+                            continue
+                        data_str = line[5:].strip()
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            chunk_data = json.loads(data_str)
+                        except json.JSONDecodeError:
+                            continue
+
+                        choices = chunk_data.get("choices") or []
+                        if choices:
+                            choice = choices[0]
+                            delta_obj = choice.get("delta") or {}
+                            content_piece = delta_obj.get("content") or ""
+                            finish_reason = choice.get("finish_reason")
+                            chunk_model = chunk_data.get("model", target_model)
+
+                            usage = None
+                            if "usage" in chunk_data and chunk_data["usage"]:
+                                u = chunk_data["usage"]
+                                usage = TokenUsage(
+                                    prompt_tokens=u.get("prompt_tokens", 0),
+                                    completion_tokens=u.get("completion_tokens", 0),
+                                    total_tokens=u.get("total_tokens", 0),
+                                )
+
+                            yield ChatStreamChunk(
+                                delta=content_piece,
+                                model=chunk_model,
+                                finish_reason=finish_reason,
+                                usage=usage,
+                            )
+            except httpx.RequestError as exc:
+                raise LLMProviderError(
+                    f"Network error streaming from {self.provider_name}: {exc}",
+                    provider=self.provider_name,
+                ) from exc
+
+        if self._external_client:
+            async for chunk in _stream(self._external_client):
+                yield chunk
+        else:
+            async with httpx.AsyncClient() as http_client:
+                async for chunk in _stream(http_client):
+                    yield chunk
+
 
 
 class GeminiClient(OpenAICompatibleClient):
@@ -564,6 +691,111 @@ class AnthropicClient(BaseLLMClient):
                 raw_output=response.content,
             ) from exc
 
+    async def complete_stream(
+        self,
+        messages: list[ChatMessage],
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: int = 4096,
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatStreamChunk]:
+        target_model = model or "claude-3-5-sonnet-latest"
+        target_temp = (
+            temperature if temperature is not None else self.settings.default_temperature
+        )
+
+        system_prompts: list[str] = []
+        anthropic_messages: list[dict[str, Any]] = []
+
+        for m in messages:
+            role_val = m.role.value if isinstance(m.role, Role) else str(m.role)
+            if role_val == "system":
+                system_prompts.append(m.content)
+            elif role_val in ("user", "tool"):
+                anthropic_messages.append({"role": "user", "content": m.content})
+            elif role_val == "assistant":
+                anthropic_messages.append({"role": "assistant", "content": m.content})
+
+        if not anthropic_messages:
+            anthropic_messages.append({"role": "user", "content": "Hello"})
+
+        payload: dict[str, Any] = {
+            "model": target_model,
+            "messages": anthropic_messages,
+            "max_tokens": kwargs.pop("max_tokens", max_tokens),
+            "temperature": target_temp,
+            "stream": True,
+            **kwargs,
+        }
+        if system_prompts:
+            payload["system"] = "\n\n".join(system_prompts)
+
+        url = f"{self.base_url}/messages"
+        headers = self._get_headers()
+
+        async def _stream(http_client: httpx.AsyncClient) -> AsyncIterator[ChatStreamChunk]:
+            try:
+                async with http_client.stream(
+                    "POST",
+                    url,
+                    json=payload,
+                    headers=headers,
+                    timeout=self.settings.default_timeout_seconds,
+                ) as response:
+                    if response.status_code >= 400:
+                        await response.aread()
+                        self._handle_http_error(
+                            httpx.HTTPStatusError(
+                                f"Streaming request failed with status {response.status_code}",
+                                request=response.request,
+                                response=response,
+                            )
+                        )
+
+                    async for line in response.aiter_lines():
+                        line = line.strip()
+                        if not line or not line.startswith("data:"):
+                            continue
+                        data_str = line[5:].strip()
+                        try:
+                            event_data = json.loads(data_str)
+                        except json.JSONDecodeError:
+                            continue
+
+                        event_type = event_data.get("type")
+                        if event_type == "content_block_delta":
+                            delta_obj = event_data.get("delta") or {}
+                            text_piece = delta_obj.get("text") or ""
+                            yield ChatStreamChunk(delta=text_piece, model=target_model)
+                        elif event_type == "message_delta":
+                            delta_obj = event_data.get("delta") or {}
+                            stop_reason = delta_obj.get("stop_reason")
+                            usage = None
+                            if "usage" in event_data and event_data["usage"]:
+                                u = event_data["usage"]
+                                out_toks = u.get("output_tokens", 0)
+                                usage = TokenUsage(completion_tokens=out_toks, total_tokens=out_toks)
+                            yield ChatStreamChunk(
+                                delta="",
+                                model=target_model,
+                                finish_reason=stop_reason,
+                                usage=usage,
+                            )
+            except httpx.RequestError as exc:
+                raise LLMProviderError(
+                    f"Network error streaming from Anthropic: {exc}",
+                    provider="anthropic",
+                ) from exc
+
+        if self._external_client:
+            async for chunk in _stream(self._external_client):
+                yield chunk
+        else:
+            async with httpx.AsyncClient() as http_client:
+                async for chunk in _stream(http_client):
+                    yield chunk
+
+
 
 class FallbackCandidate:
     """A configured candidate target within a fallback cascade."""
@@ -742,6 +974,60 @@ class FallbackLLMClient(BaseLLMClient):
             message=f"All {len(self.candidates)} LLM candidates in fallback sequence failed structured completion. Last error: {last_exception}",
             errors=attempts,
         ) from last_exception
+
+    async def complete_stream(
+        self,
+        messages: list[ChatMessage],
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatStreamChunk]:
+        attempts: list[dict[str, Any]] = []
+        last_exception: Optional[Exception] = None
+
+        for idx, candidate in enumerate(self.candidates):
+            effective_model = candidate.model or model
+            provider_label = candidate.provider_name
+            started = False
+            try:
+                stream_iter = candidate.client.complete_stream(
+                    messages=messages,
+                    model=effective_model,
+                    temperature=temperature,
+                    **kwargs,
+                )
+                async for chunk in stream_iter:
+                    started = True
+                    yield chunk
+                return
+            except self.fallback_exceptions as exc:
+                if started:
+                    # Once chunks have been emitted to the caller, we cannot rewind and restart
+                    raise
+                last_exception = exc
+                err_record = {
+                    "candidate_index": idx,
+                    "provider": provider_label,
+                    "model": effective_model,
+                    "error": str(exc),
+                    "exception_type": type(exc).__name__,
+                    "status_code": getattr(exc, "status_code", None),
+                }
+                attempts.append(err_record)
+                logger.warning(
+                    "Fallback streaming candidate %d/%d (%s) failed before sending data: %s. Failing over...",
+                    idx + 1,
+                    len(self.candidates),
+                    provider_label,
+                    exc,
+                )
+                continue
+
+        raise AllProvidersFailedError(
+            message=f"All {len(self.candidates)} LLM candidates in fallback sequence failed streaming. Last error: {last_exception}",
+            errors=attempts,
+        ) from last_exception
+
 
 
 class LLMFactory:
