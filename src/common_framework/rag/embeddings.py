@@ -10,6 +10,7 @@ import httpx
 
 from common_framework.core.config import Settings, get_settings
 from common_framework.core.exceptions import AuthenticationError, ConfigurationError, LLMProviderError
+from common_framework.core.security import validate_provider_base_url
 
 
 class BaseEmbeddingProvider(ABC):
@@ -78,7 +79,7 @@ class OpenAICompatibleEmbeddingProvider(BaseEmbeddingProvider):
         self.api_key = (
             raw_key.get_secret_value() if hasattr(raw_key, "get_secret_value") else raw_key
         )
-        self.base_url = (base_url or self.settings.openai_base_url).rstrip("/")
+        self.base_url = validate_provider_base_url(base_url or self.settings.openai_base_url)
         self.model = model
         self._external_client = client
 

@@ -21,6 +21,7 @@ from common_framework.core.exceptions import (
     RateLimitError,
     StructuredOutputError,
 )
+from common_framework.core.security import validate_provider_base_url
 
 logger = logging.getLogger("common_framework.llm")
 
@@ -159,7 +160,7 @@ class OpenAICompatibleClient(BaseLLMClient):
         self.api_key = (
             raw_key.get_secret_value() if hasattr(raw_key, "get_secret_value") else raw_key
         )
-        self.base_url = (base_url or self.settings.openai_base_url).rstrip("/")
+        self.base_url = validate_provider_base_url(base_url or self.settings.openai_base_url)
         self._external_client = client
 
     def _get_headers(self) -> dict[str, str]:
@@ -485,7 +486,7 @@ class AnthropicClient(BaseLLMClient):
             raw_key.get_secret_value() if hasattr(raw_key, "get_secret_value") else raw_key
         )
         default_url = getattr(self.settings, "anthropic_base_url", "https://api.anthropic.com/v1")
-        self.base_url = (base_url or default_url).rstrip("/")
+        self.base_url = validate_provider_base_url(base_url or default_url)
         self.provider_name = "anthropic"
         self._external_client = client
 
