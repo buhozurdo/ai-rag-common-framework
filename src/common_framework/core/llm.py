@@ -147,7 +147,7 @@ class OpenAICompatibleClient(BaseLLMClient):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: Optional[Union[str, SecretStr]] = None,
         base_url: Optional[str] = None,
         provider_name: str = "openai",
         settings: Optional[Settings] = None,
@@ -155,7 +155,10 @@ class OpenAICompatibleClient(BaseLLMClient):
     ) -> None:
         super().__init__(settings)
         self.provider_name = provider_name
-        self.api_key = api_key or self.settings.get_api_key_for_provider(provider_name)
+        raw_key = api_key or self.settings.get_api_key_for_provider(provider_name)
+        self.api_key = (
+            raw_key.get_secret_value() if hasattr(raw_key, "get_secret_value") else raw_key
+        )
         self.base_url = (base_url or self.settings.openai_base_url).rstrip("/")
         self._external_client = client
 
@@ -428,12 +431,12 @@ class GeminiClient(OpenAICompatibleClient):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: Optional[Union[str, SecretStr]] = None,
         settings: Optional[Settings] = None,
         client: Optional[httpx.AsyncClient] = None,
     ) -> None:
         active_settings = settings or get_settings()
-        key = api_key or active_settings.gemini_api_key
+        key = api_key or active_settings.get_api_key_for_provider("gemini")
         # Gemini provides a direct OpenAI-compatible endpoint
         gemini_base = "https://generativelanguage.googleapis.com/v1beta/openai"
         super().__init__(
@@ -471,13 +474,16 @@ class AnthropicClient(BaseLLMClient):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: Optional[Union[str, SecretStr]] = None,
         base_url: Optional[str] = None,
         settings: Optional[Settings] = None,
         client: Optional[httpx.AsyncClient] = None,
     ) -> None:
         super().__init__(settings=settings)
-        self.api_key = api_key or self.settings.anthropic_api_key
+        raw_key = api_key or self.settings.get_api_key_for_provider("anthropic")
+        self.api_key: Optional[str] = (
+            raw_key.get_secret_value() if hasattr(raw_key, "get_secret_value") else raw_key
+        )
         default_url = getattr(self.settings, "anthropic_base_url", "https://api.anthropic.com/v1")
         self.base_url = (base_url or default_url).rstrip("/")
         self.provider_name = "anthropic"
