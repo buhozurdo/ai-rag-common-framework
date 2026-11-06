@@ -136,27 +136,55 @@ def reciprocal_rank_fusion(
     """Combine dense and sparse search rankings using Reciprocal Rank Fusion (RRF).
 
     Formula: RRF_score(d) = sum( weight / (k + rank(d)) )
+
+    Args:
+        dense_results: Search results from vector similarity retrieval.
+        sparse_results: Search results from BM25 sparse keyword retrieval.
+        k: Smoothing constant to control relative importance of top vs lower ranks (default 60).
+        dense_weight: Weight multiplier for dense retrieval (>= 0.0).
+        sparse_weight: Weight multiplier for sparse retrieval (>= 0.0).
+        top_k: Number of fused results to return.
+
+    Returns:
+        List of fused SearchResult objects sorted by descending fused score.
+
+    Raises:
+        ValueError: If k < 1, weights are negative, or both weights are zero.
     """
+    if k < 1:
+        raise ValueError(f"Smoothing parameter k must be >= 1, got {k}")
+    if dense_weight < 0.0 or sparse_weight < 0.0:
+        raise ValueError(
+            f"Weights dense_weight ({dense_weight}) and sparse_weight ({sparse_weight}) must be non-negative"
+        )
+    if dense_weight == 0.0 and sparse_weight == 0.0:
+        raise ValueError("At least one search weight (dense_weight or sparse_weight) must be positive")
+
     rrf_scores: dict[str, float] = {}
     doc_map: dict[str, Document] = {}
 
     # Accumulate dense rankings
-    for rank, res in enumerate(dense_results, start=1):
-        doc_id = res.document.id
-        doc_map[doc_id] = res.document
-        rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + (dense_weight / (k + rank))
+    if dense_weight > 0.0:
+        for rank, res in enumerate(dense_results, start=1):
+            doc_id = res.document.id
+            doc_map[doc_id] = res.document
+            rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + (dense_weight / (k + rank))
 
     # Accumulate sparse (BM25) rankings
-    for rank, res in enumerate(sparse_results, start=1):
-        doc_id = res.document.id
-        doc_map[doc_id] = res.document
-        rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + (sparse_weight / (k + rank))
+    if sparse_weight > 0.0:
+        for rank, res in enumerate(sparse_results, start=1):
+            doc_id = res.document.id
+            doc_map[doc_id] = res.document
+            rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + (sparse_weight / (k + rank))
 
     if not rrf_scores:
         return []
 
     # Normalize RRF scores relative to theoretical maximum possible score
     max_possible = (dense_weight / (k + 1)) + (sparse_weight / (k + 1))
+    if max_possible <= 0.0:
+        return []
+
     fused: list[SearchResult] = []
 
     for doc_id, raw_rrf in rrf_scores.items():

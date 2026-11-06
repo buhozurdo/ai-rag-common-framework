@@ -141,3 +141,77 @@ async def test_rag_engine_hybrid_vs_dense_mode():
 
     dense_results = await engine.retrieve("Alpha", top_k=1, mode="dense")
     assert len(dense_results) == 1
+
+
+def test_reciprocal_rank_fusion_zero_weights_raises():
+    """Verify reciprocal_rank_fusion raises ValueError when both weights are 0.0 to prevent ZeroDivisionError."""
+    doc = Document(id="d1", content="Sample")
+    res = [SearchResult(document=doc, score=0.9)]
+
+    with pytest.raises(ValueError, match="At least one search weight .* must be positive"):
+        reciprocal_rank_fusion(
+            dense_results=res,
+            sparse_results=res,
+            dense_weight=0.0,
+            sparse_weight=0.0,
+        )
+
+
+def test_reciprocal_rank_fusion_negative_weights_raises():
+    """Verify reciprocal_rank_fusion raises ValueError on negative weights."""
+    doc = Document(id="d1", content="Sample")
+    res = [SearchResult(document=doc, score=0.9)]
+
+    with pytest.raises(ValueError, match="must be non-negative"):
+        reciprocal_rank_fusion(
+            dense_results=res,
+            sparse_results=res,
+            dense_weight=-0.5,
+            sparse_weight=0.5,
+        )
+
+
+def test_reciprocal_rank_fusion_invalid_k_raises():
+    """Verify reciprocal_rank_fusion raises ValueError on k < 1."""
+    doc = Document(id="d1", content="Sample")
+    res = [SearchResult(document=doc, score=0.9)]
+
+    with pytest.raises(ValueError, match="Smoothing parameter k must be >= 1"):
+        reciprocal_rank_fusion(
+            dense_results=res,
+            sparse_results=res,
+            k=0,
+            dense_weight=0.5,
+            sparse_weight=0.5,
+        )
+
+
+def test_reciprocal_rank_fusion_single_non_zero_weight():
+    """Verify reciprocal_rank_fusion handles single non-zero weight cleanly without division errors."""
+    doc_a = Document(id="a", content="A")
+    doc_b = Document(id="b", content="B")
+    dense_res = [SearchResult(document=doc_a, score=0.9)]
+    sparse_res = [SearchResult(document=doc_b, score=0.8)]
+
+    # Dense only: doc_a should be returned, doc_b not scored
+    dense_only = reciprocal_rank_fusion(
+        dense_results=dense_res,
+        sparse_results=sparse_res,
+        dense_weight=1.0,
+        sparse_weight=0.0,
+    )
+    assert len(dense_only) == 1
+    assert dense_only[0].document.id == "a"
+    assert dense_only[0].score == 1.0  # (1.0 / (k+1)) / (1.0 / (k+1)) = 1.0
+
+    # Sparse only: doc_b should be returned, doc_a not scored
+    sparse_only = reciprocal_rank_fusion(
+        dense_results=dense_res,
+        sparse_results=sparse_res,
+        dense_weight=0.0,
+        sparse_weight=1.0,
+    )
+    assert len(sparse_only) == 1
+    assert sparse_only[0].document.id == "b"
+    assert sparse_only[0].score == 1.0
+
