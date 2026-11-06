@@ -14,6 +14,23 @@ from common_framework.rag.models import Document, SearchResult
 DEFAULT_COLLECTION = "default"
 
 
+try:
+    import numpy as np
+
+    _HAS_NUMPY = True
+except ImportError:  # pragma: no cover
+    np = None  # type: ignore
+    _HAS_NUMPY = False
+
+
+def normalize_vector(v: list[float]) -> tuple[list[float], float]:
+    """Compute Euclidean (L2) norm and return (unit_vector, original_norm)."""
+    norm = math.sqrt(sum(x * x for x in v))
+    if norm == 0.0:
+        return list(v), 0.0
+    return [x / norm for x in v], norm
+
+
 def cosine_similarity(v1: list[float], v2: list[float]) -> float:
     """Compute cosine similarity between two vector lists."""
     if not v1 or not v2:
@@ -34,6 +51,7 @@ def cosine_similarity(v1: list[float], v2: list[float]) -> float:
     # Using conditional mapping (passthrough for positive, (s+1)/2 for negative) produces a
     # discontinuity at 0: a barely-negative vector gets ~0.5 while an orthogonal vector stays at
     # 0.0, completely inverting the semantic ordering. The uniform mapping preserves rank order.
+    score = max(-1.0, min(1.0, score))
     return (score + 1.0) / 2.0
 
 
@@ -96,33 +114,50 @@ class BaseVectorStore(ABC):
 
 
 class InMemoryVectorStore(BaseVectorStore):
-    """High-performance, pure-Python in-memory vector store with multi-collection isolation and hybrid search."""
+    """High-performance in-memory vector store with pre-normalized vectors, multi-collection isolation,
 
-    def __init__(self) -> None:
+    and opportunistic NumPy/BLAS GEMV matrix multiplication acceleration.
+    """
+
+    def __init__(self, use_numpy: Optional[bool] = None) -> None:
         # Partitioned storage: collection_name -> (doc_id -> Document)
         self._collections: dict[str, dict[str, Document]] = {}
         # Partitioned BM25 index: collection_name -> BM25Index
         self._bm25_indexes: dict[str, BM25Index] = {}
+        # Pre-normalized unit vectors: collection_name -> (doc_id -> unit_vector)
+        self._normalized_vectors: dict[str, dict[str, list[float]]] = {}
+        # Matrix cache for BLAS GEMV: collection_name -> (doc_ids_list, np.ndarray)
+        self._matrix_cache: dict[str, Optional[tuple[list[str], Any]]] = {}
+        self.use_numpy = _HAS_NUMPY if use_numpy is None else (use_numpy and _HAS_NUMPY)
 
     def _ensure_collection(self, collection: str) -> tuple[dict[str, Document], BM25Index]:
         if collection not in self._collections:
             self._collections[collection] = {}
             self._bm25_indexes[collection] = BM25Index()
+            self._normalized_vectors[collection] = {}
+            self._matrix_cache[collection] = None
         return self._collections[collection], self._bm25_indexes[collection]
+
+    def _invalidate_matrix_cache(self, collection: str) -> None:
+        self._matrix_cache[collection] = None
 
     async def add_documents(
         self, documents: list[Document], collection: str = DEFAULT_COLLECTION
     ) -> list[str]:
         doc_store, bm25 = self._ensure_collection(collection)
+        norm_store = self._normalized_vectors[collection]
         added_ids: list[str] = []
 
         for doc in documents:
             if doc.embedding is None:
                 raise ValueError(f"Document {doc.id!r} has no embedding. Generate embeddings before adding.")
             doc_store[doc.id] = doc
+            unit_vec, _ = normalize_vector(doc.embedding)
+            norm_store[doc.id] = unit_vec
             added_ids.append(doc.id)
 
         bm25.add_documents(documents)
+        self._invalidate_matrix_cache(collection)
         return added_ids
 
     async def similarity_search(
@@ -136,20 +171,78 @@ class InMemoryVectorStore(BaseVectorStore):
             return []
 
         doc_store = self._collections[collection]
-        scored: list[SearchResult] = []
+        if not doc_store:
+            return []
 
-        for doc in doc_store.values():
+        # Validate vector dimensions against stored documents
+        first_doc = next(iter(doc_store.values()))
+        if first_doc.embedding is not None and len(query_embedding) != len(first_doc.embedding):
+            raise ValueError(
+                f"Vector dimension mismatch: query vector has {len(query_embedding)} dims, document has {len(first_doc.embedding)} dims"
+            )
+
+        # Pre-normalize query embedding once
+        q_unit, q_norm = normalize_vector(query_embedding)
+        if q_norm == 0.0:
+            return []
+
+        norm_store = self._normalized_vectors.get(collection, {})
+
+        # Fast path: NumPy BLAS matrix GEMV multiplication
+        if self.use_numpy and np is not None:
+            cached = self._matrix_cache.get(collection)
+            if cached is None:
+                doc_ids = [d_id for d_id, d in doc_store.items() if d.embedding is not None]
+                if not doc_ids:
+                    return []
+                matrix = np.array([norm_store[d_id] for d_id in doc_ids], dtype=np.float32)
+                self._matrix_cache[collection] = (doc_ids, matrix)
+
+            doc_ids, matrix = self._matrix_cache[collection]  # type: ignore
+            if len(doc_ids) == 0:
+                return []
+
+            q_arr = np.array(q_unit, dtype=np.float32)
+            raw_scores = matrix.dot(q_arr)  # Single BLAS GEMV call
+            scaled_scores = (np.clip(raw_scores, -1.0, 1.0) + 1.0) * 0.5
+
+            if filter_metadata:
+                scored: list[SearchResult] = []
+                for idx, doc_id in enumerate(doc_ids):
+                    doc = doc_store[doc_id]
+                    if all(doc.metadata.get(k) == v for k, v in filter_metadata.items()):
+                        scored.append(SearchResult(document=doc, score=float(scaled_scores[idx])))
+                scored.sort(key=lambda x: x.score, reverse=True)
+                return scored[:top_k]
+
+            # No metadata filter: fast top_k index selection
+            if len(doc_ids) <= top_k:
+                top_indices = np.argsort(scaled_scores)[::-1]
+            else:
+                partition_idx = np.argpartition(scaled_scores, -top_k)[-top_k:]
+                top_indices = partition_idx[np.argsort(scaled_scores[partition_idx])[::-1]]
+
+            return [
+                SearchResult(document=doc_store[doc_ids[idx]], score=float(scaled_scores[idx]))
+                for idx in top_indices
+            ]
+
+        # Pure Python pre-normalized fallback (No NumPy)
+        scored_py: list[SearchResult] = []
+        for doc_id, doc in doc_store.items():
             if filter_metadata:
                 matches = all(doc.metadata.get(k) == v for k, v in filter_metadata.items())
                 if not matches:
                     continue
 
-            if doc.embedding is not None:
-                sim = cosine_similarity(query_embedding, doc.embedding)
-                scored.append(SearchResult(document=doc, score=sim))
+            unit_doc = norm_store.get(doc_id)
+            if unit_doc is not None:
+                dot = sum(a * b for a, b in zip(q_unit, unit_doc))
+                sim = (max(-1.0, min(1.0, dot)) + 1.0) / 2.0
+                scored_py.append(SearchResult(document=doc, score=sim))
 
-        scored.sort(key=lambda x: x.score, reverse=True)
-        return scored[:top_k]
+        scored_py.sort(key=lambda x: x.score, reverse=True)
+        return scored_py[:top_k]
 
     async def hybrid_search(
         self,
@@ -193,13 +286,18 @@ class InMemoryVectorStore(BaseVectorStore):
     ) -> None:
         if collection in self._collections:
             doc_store = self._collections[collection]
+            norm_store = self._normalized_vectors.get(collection, {})
             for doc_id in document_ids:
                 doc_store.pop(doc_id, None)
+                norm_store.pop(doc_id, None)
             self._bm25_indexes[collection].delete(document_ids)
+            self._invalidate_matrix_cache(collection)
 
     async def delete_collection(self, collection: str) -> None:
         self._collections.pop(collection, None)
         self._bm25_indexes.pop(collection, None)
+        self._normalized_vectors.pop(collection, None)
+        self._matrix_cache.pop(collection, None)
 
     async def list_collections(self) -> list[str]:
         return list(self._collections.keys())
@@ -217,6 +315,8 @@ class InMemoryVectorStore(BaseVectorStore):
         """Remove all collections and documents from memory."""
         self._collections.clear()
         self._bm25_indexes.clear()
+        self._normalized_vectors.clear()
+        self._matrix_cache.clear()
 
     def save_to_json(self, filepath: Union[str, Path]) -> None:
         """Serialize all collections, documents, and embeddings to a local JSON file."""
@@ -272,9 +372,14 @@ class InMemoryVectorStore(BaseVectorStore):
         total_loaded = 0
         for coll_name, doc_list in loaded.items():
             store, bm25 = self._ensure_collection(coll_name)
+            norm_store = self._normalized_vectors[coll_name]
             for d in doc_list:
                 store[d.id] = d
+                if d.embedding is not None:
+                    unit_vec, _ = normalize_vector(d.embedding)
+                    norm_store[d.id] = unit_vec
             bm25.add_documents(doc_list)
+            self._invalidate_matrix_cache(coll_name)
             total_loaded += len(doc_list)
 
         return total_loaded
