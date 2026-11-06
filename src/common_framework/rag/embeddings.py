@@ -29,6 +29,16 @@ class BaseEmbeddingProvider(ABC):
         """Generate vector embeddings for a list of document strings."""
         pass
 
+    async def aclose(self) -> None:
+        """Release underlying network resources and close persistent HTTP connection pools."""
+        pass
+
+    async def __aenter__(self: Any) -> Any:
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        await self.aclose()
+
 
 class MockEmbeddingProvider(BaseEmbeddingProvider):
     """Deterministic, lightweight embedding provider for testing and offline development."""
@@ -82,6 +92,21 @@ class OpenAICompatibleEmbeddingProvider(BaseEmbeddingProvider):
         self.base_url = validate_provider_base_url(base_url or self.settings.openai_base_url)
         self.model = model
         self._external_client = client
+        self._internal_client: Optional[httpx.AsyncClient] = None
+
+    def _get_client(self) -> httpx.AsyncClient:
+        """Return the active HTTP client: external injection or internal persistent pool."""
+        if self._external_client is not None:
+            return self._external_client
+        if self._internal_client is None or self._internal_client.is_closed:
+            self._internal_client = httpx.AsyncClient(timeout=self.settings.default_timeout_seconds)
+        return self._internal_client
+
+    async def aclose(self) -> None:
+        """Close persistent internal HTTP connection pool if owned."""
+        if self._internal_client is not None and not self._internal_client.is_closed:
+            await self._internal_client.aclose()
+            self._internal_client = None
 
     def _get_headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -127,11 +152,7 @@ class OpenAICompatibleEmbeddingProvider(BaseEmbeddingProvider):
                     provider=self.provider_name,
                 ) from exc
 
-        if self._external_client:
-            return await _call(self._external_client)
-
-        async with httpx.AsyncClient() as client:
-            return await _call(client)
+        return await _call(self._get_client())
 
     async def embed_query(self, text: str) -> list[float]:
         results = await self._send_request([text])
