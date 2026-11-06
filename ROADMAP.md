@@ -47,6 +47,7 @@ As the framework evolves, the pipeline relationship across channels progresses a
 | **Phase 6** | v1.0.0-canary | v0.6.0-alpha | v0.4.0-beta | **v0.2.0 (GA)** |
 | **Phase 7** | — | v0.5.0-alpha | — | **v0.3.0 (GA)** |
 | **Phase 8** | — | — | — | **v0.4.0 (GA)** |
+| **Phase 9** | — | **v0.5.0-alpha (Completed)** | v0.5.0-beta | **v0.5.0 (Upcoming)** |
 
 ---
 
@@ -107,13 +108,13 @@ As the framework evolves, the pipeline relationship across channels progresses a
 
 ---
 
-### 🔹 v0.5.0 — "Autonomous Agents, Fallbacks & Hardening (Bloque C)"
+### 🔹 v0.5.0 — "Autonomous Agents, Fallbacks & Hardening (Bloque C)" *(Status: Alpha Released - v0.5.0-alpha)*
 * **Objective:** Multi-provider resilience, streaming generation, autonomous agent workflows, and core text-splitting hardening.
 * **Tracked Tasks & Features:**
-  * **Bloque C Core:**
-    * Multi-provider model fallbacks with automatic failover on quota exhaustion (HTTP 429 / 503).
-    * Native Server-Sent Events (SSE) streaming for step-by-step token generation.
-    * Semantic caching for repetitive query deduplication.
+  * **Bloque C Core (Completed in v0.5.0-alpha):**
+    * Multi-provider model fallbacks with automatic failover on quota exhaustion (`FallbackLLMClient`, `AnthropicClient`, `AllProvidersFailedError`).
+    * Native Server-Sent Events (SSE) streaming for step-by-step token generation across LLM clients, `RAGEngine.query_stream()`, and `/rag/query/stream`.
+    * In-memory semantic caching with cosine similarity, LRU eviction, and TTL (`SemanticCache`, `CachedLLMClient`).
   * **Text Splitters Hardening:**
     * Implement sliding window `chunk_overlap` in `CharacterTextSplitter`.
     * Fix chunk ordering in `RecursiveTextSplitter` on oversized sub-chunk recursion.
