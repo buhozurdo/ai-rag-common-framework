@@ -159,6 +159,7 @@ def create_app(
     mcp_server: Optional[Any] = None,
     mcp_prefix: str = "/mcp",
     mcp_api_key: Optional[str] = None,
+    mcp_disable_dns_protection: bool = False,
     settings: Optional[Settings] = None,
     **fastapi_kwargs: Any,
 ) -> FastAPI:
@@ -234,6 +235,7 @@ def create_app(
             mcp_server=mcp_server,
             prefix=mcp_prefix,
             api_key=mcp_api_key,
+            disable_dns_protection=mcp_disable_dns_protection,
         )
 
     return app

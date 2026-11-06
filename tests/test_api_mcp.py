@@ -168,3 +168,61 @@ async def test_mount_mcp_custom_prefix(sample_mcp_server):
         )
         assert res.status_code == 400
         assert "session_id is required" in res.text
+
+
+def test_mcp_dns_rebinding_protection_defaults(sample_mcp_server):
+    """Verify DNS rebinding protection defaults to enabled (secure default) and can be disabled."""
+    # Default: secure (disable_dns_protection=False)
+    app_default = sample_mcp_server.get_sse_app()
+    assert app_default is not None
+
+    # Disabled explicitly
+    app_disabled = sample_mcp_server.get_sse_app(disable_dns_protection=True)
+    assert app_disabled is not None
+
+
+@pytest.mark.asyncio
+async def test_mount_mcp_dns_protection_toggle(sample_mcp_server):
+    """Verify create_app and mount_mcp_to_fastapi propagate mcp_disable_dns_protection."""
+    app = create_app(
+        mcp_server=sample_mcp_server,
+        mcp_prefix="/mcp",
+        mcp_disable_dns_protection=True,
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+        res = await client.post("/mcp/messages/", json={})
+        assert res.status_code == 400
+        assert "session_id is required" in res.text
+
+
+@pytest.mark.asyncio
+async def test_mcp_dns_rebinding_protection_blocks_malicious_host(sample_mcp_server):
+    """Verify that requests with untrusted Host header are rejected with 421 when protection is active."""
+    # Active protection (default)
+    app = create_app(mcp_server=sample_mcp_server, mcp_prefix="/mcp")
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+        res = await client.post(
+            "/mcp/messages/",
+            json={},
+            headers={"Host": "attacker.evil.com"},
+        )
+        assert res.status_code == 421
+
+    # Disabled protection allows request through
+    app_disabled = create_app(
+        mcp_server=sample_mcp_server,
+        mcp_prefix="/mcp",
+        mcp_disable_dns_protection=True,
+    )
+    transport_disabled = httpx.ASGITransport(app=app_disabled)
+    async with httpx.AsyncClient(transport=transport_disabled, base_url="http://localhost") as client:
+        res = await client.post(
+            "/mcp/messages/",
+            json={},
+            headers={"Host": "attacker.evil.com"},
+        )
+        # Bypasses 421, reaches MCP message handler
+        assert res.status_code == 400
+        assert "session_id is required" in res.text

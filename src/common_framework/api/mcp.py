@@ -98,6 +98,7 @@ def mount_mcp_to_fastapi(
     prefix: str = "/mcp",
     api_key: Optional[str] = None,
     allow_query_param_auth: bool = False,
+    disable_dns_protection: bool = False,
 ) -> None:
     """Mount a FrameworkMCPServer as an SSE ASGI sub-application into FastAPI.
 
@@ -107,9 +108,10 @@ def mount_mcp_to_fastapi(
         prefix: URL path prefix where MCP SSE routes will be served (default: '/mcp').
         api_key: Optional secret key required to access the MCP endpoints.
         allow_query_param_auth: Whether to accept ?api_key= query parameter (useful for EventSource).
+        disable_dns_protection: Set to True to disable DNS rebinding protection (default: False).
     """
     normalized_prefix = "/" + prefix.strip("/")
-    sse_app = mcp_server.get_sse_app()
+    sse_app = mcp_server.get_sse_app(disable_dns_protection=disable_dns_protection)
 
     target_app = sse_app
     if api_key:
