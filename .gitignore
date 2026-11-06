@@ -57,3 +57,6 @@ htmlcov/
 *.sqlite3
 *.db
 
+
+# Local release guide
+RELEASE.md
