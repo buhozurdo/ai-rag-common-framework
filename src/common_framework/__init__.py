@@ -7,6 +7,7 @@ with minimal boilerplate.
 
 from common_framework.core.config import Settings, get_settings
 from common_framework.core.exceptions import (
+    AllProvidersFailedError,
     AuthenticationError,
     ConfigurationError,
     FrameworkError,
@@ -17,9 +18,12 @@ from common_framework.core.exceptions import (
     StructuredOutputError,
 )
 from common_framework.core.llm import (
+    AnthropicClient,
     BaseLLMClient,
     ChatMessage,
     ChatResponse,
+    FallbackCandidate,
+    FallbackLLMClient,
     LLMFactory,
     Role,
     TokenUsage,
@@ -68,7 +72,11 @@ __all__ = [
     "RateLimitError",
     "ModelNotFoundError",
     "StructuredOutputError",
+    "AllProvidersFailedError",
     "BaseLLMClient",
+    "AnthropicClient",
+    "FallbackCandidate",
+    "FallbackLLMClient",
     "ChatMessage",
     "ChatResponse",
     "TokenUsage",

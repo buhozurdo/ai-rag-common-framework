@@ -77,3 +77,24 @@ class StructuredOutputError(LLMError):
     ) -> None:
         super().__init__(message, details)
         self.raw_output = raw_output
+
+
+class AllProvidersFailedError(LLMProviderError):
+    """Raised when all candidates in a fallback sequence fail."""
+
+    def __init__(
+        self,
+        message: str = "All LLM providers in fallback chain failed",
+        errors: Optional[list[dict[str, Any]]] = None,
+        details: Optional[dict[str, Any]] = None,
+    ) -> None:
+        merged_details = dict(details or {})
+        merged_details["errors"] = errors or []
+        super().__init__(
+            message=message,
+            status_code=502,
+            provider="fallback_router",
+            details=merged_details,
+        )
+        self.errors = errors or []
+
