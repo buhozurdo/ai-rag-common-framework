@@ -65,7 +65,7 @@ class OpenAICompatibleEmbeddingProvider(BaseEmbeddingProvider):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: Optional[Union[str, Any]] = None,
         base_url: Optional[str] = None,
         model: str = "text-embedding-3-small",
         provider_name: str = "openai",
@@ -74,7 +74,10 @@ class OpenAICompatibleEmbeddingProvider(BaseEmbeddingProvider):
     ) -> None:
         super().__init__(settings)
         self.provider_name = provider_name
-        self.api_key = api_key or self.settings.get_api_key_for_provider(provider_name)
+        raw_key = api_key or self.settings.get_api_key_for_provider(provider_name)
+        self.api_key = (
+            raw_key.get_secret_value() if hasattr(raw_key, "get_secret_value") else raw_key
+        )
         self.base_url = (base_url or self.settings.openai_base_url).rstrip("/")
         self.model = model
         self._external_client = client
@@ -172,7 +175,7 @@ class EmbeddingFactory:
             gemini_base = "https://generativelanguage.googleapis.com/v1beta/openai"
             target_model = model or "text-embedding-004"
             return OpenAICompatibleEmbeddingProvider(
-                api_key=cfg.gemini_api_key,
+                api_key=cfg.get_api_key_for_provider("gemini"),
                 base_url=gemini_base,
                 model=target_model,
                 provider_name="gemini",

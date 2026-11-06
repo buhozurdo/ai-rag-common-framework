@@ -1,8 +1,8 @@
 """Centralized configuration system based on pydantic-settings."""
 
 from functools import lru_cache
-from typing import Any, Literal, Optional
-from pydantic import Field, field_validator
+from typing import Any, Literal, Optional, Union
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,6 +14,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
+        frozen=True,
     )
 
     # General framework environment
@@ -73,12 +74,12 @@ class Settings(BaseSettings):
         return list(value) if value is not None else []
 
     # API Keys & Endpoints
-    gemini_api_key: Optional[str] = Field(
+    gemini_api_key: Optional[SecretStr] = Field(
         default=None,
         alias="GEMINI_API_KEY",
         description="Google Gemini / AI Studio API Key",
     )
-    openai_api_key: Optional[str] = Field(
+    openai_api_key: Optional[SecretStr] = Field(
         default=None,
         alias="OPENAI_API_KEY",
         description="OpenAI API Key",
@@ -88,7 +89,7 @@ class Settings(BaseSettings):
         alias="OPENAI_BASE_URL",
         description="Base URL for OpenAI-compatible endpoints",
     )
-    anthropic_api_key: Optional[str] = Field(
+    anthropic_api_key: Optional[SecretStr] = Field(
         default=None,
         alias="ANTHROPIC_API_KEY",
         description="Anthropic API Key",
@@ -105,17 +106,21 @@ class Settings(BaseSettings):
     )
 
     def get_api_key_for_provider(self, provider: str) -> Optional[str]:
-        """Retrieve the API key associated with a specific provider."""
+        """Retrieve the plaintext API key associated with a specific provider."""
         provider_normalized = provider.lower().strip()
+        secret: Optional[Union[SecretStr, str]] = None
         if provider_normalized == "gemini":
-            return self.gemini_api_key
-        if provider_normalized == "openai":
-            return self.openai_api_key
-        if provider_normalized == "anthropic":
-            return self.anthropic_api_key
-        if provider_normalized == "ollama":
+            secret = self.gemini_api_key
+        elif provider_normalized == "openai":
+            secret = self.openai_api_key
+        elif provider_normalized == "anthropic":
+            secret = self.anthropic_api_key
+        elif provider_normalized == "ollama":
             return None
-        return None
+
+        if secret is None:
+            return None
+        return secret.get_secret_value() if isinstance(secret, SecretStr) else str(secret)
 
 
 @lru_cache(maxsize=1)
