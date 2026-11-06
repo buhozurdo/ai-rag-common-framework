@@ -1,10 +1,8 @@
-"""Text splitting and chunking strategies."""
-
 from __future__ import annotations
 
 import re
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Iterable, Iterator, Optional
 
 from common_framework.rag.models import Document
 
@@ -25,21 +23,26 @@ class BaseTextSplitter(ABC):
         self.chunk_overlap = chunk_overlap
 
     @abstractmethod
-    def split_text(self, text: str) -> list[str]:
-        """Split a raw text string into a list of chunks."""
+    def split_text_stream(self, text: str) -> Iterator[str]:
+        """Lazily split a raw text string into a stream of chunks."""
         pass
 
-    def split_documents(self, documents: list[Document]) -> list[Document]:
-        """Split a list of documents into chunked Document objects, preserving metadata."""
-        chunked_docs: list[Document] = []
+    def split_text(self, text: str) -> list[str]:
+        """Split a raw text string into a list of chunks."""
+        return list(self.split_text_stream(text))
+
+    def split_documents_stream(self, documents: Iterable[Document]) -> Iterator[Document]:
+        """Lazily split a stream/iterable of documents into chunked Document objects."""
         for doc in documents:
-            chunks = self.split_text(doc.content)
-            for idx, chunk in enumerate(chunks):
+            for idx, chunk in enumerate(self.split_text_stream(doc.content)):
                 meta = dict(doc.metadata)
                 meta["parent_id"] = doc.id
                 meta["chunk_index"] = idx
-                chunked_docs.append(Document(content=chunk, metadata=meta))
-        return chunked_docs
+                yield Document(content=chunk, metadata=meta)
+
+    def split_documents(self, documents: list[Document]) -> list[Document]:
+        """Split a list of documents into chunked Document objects, preserving metadata."""
+        return list(self.split_documents_stream(documents))
 
 
 class CharacterTextSplitter(BaseTextSplitter):
@@ -54,12 +57,11 @@ class CharacterTextSplitter(BaseTextSplitter):
         super().__init__(chunk_size, chunk_overlap)
         self.separator = separator
 
-    def split_text(self, text: str) -> list[str]:
+    def split_text_stream(self, text: str) -> Iterator[str]:
         if not text:
-            return []
+            return
 
         splits = text.split(self.separator) if self.separator != "" else list(text)
-        chunks: list[str] = []
         current_chunk: list[str] = []
         current_length = 0
 
@@ -72,7 +74,7 @@ class CharacterTextSplitter(BaseTextSplitter):
                 current_length += sep_len + piece_len
             else:
                 if current_chunk:
-                    chunks.append(self.separator.join(current_chunk))
+                    yield self.separator.join(current_chunk)
                     if self.chunk_overlap > 0:
                         overlap_elements: list[str] = []
                         overlap_len = 0
@@ -104,9 +106,7 @@ class CharacterTextSplitter(BaseTextSplitter):
                 current_length += sep_len + piece_len
 
         if current_chunk:
-            chunks.append(self.separator.join(current_chunk))
-
-        return chunks
+            yield self.separator.join(current_chunk)
 
 
 class RecursiveTextSplitter(BaseTextSplitter):
@@ -124,9 +124,9 @@ class RecursiveTextSplitter(BaseTextSplitter):
         super().__init__(chunk_size, chunk_overlap)
         self.separators = separators or ["\n\n", "\n", " ", ""]
 
-    def _split(self, text: str, separators: list[str]) -> list[str]:
+    def _split_stream(self, text: str, separators: list[str]) -> Iterator[str]:
         if not text:
-            return []
+            return
 
         # Find the first separator present in the text
         active_sep = separators[-1]
@@ -141,7 +141,6 @@ class RecursiveTextSplitter(BaseTextSplitter):
         splits = text.split(active_sep) if active_sep != "" else list(text)
 
         # Merge splits into chunks adhering to chunk_size and chunk_overlap
-        chunks: list[str] = []
         current_chunk: list[str] = []
         current_length = 0
         next_separators = separators[separators.index(active_sep) + 1 :] if active_sep in separators else []
@@ -152,14 +151,12 @@ class RecursiveTextSplitter(BaseTextSplitter):
                 if current_chunk:
                     chunk_text = active_sep.join(current_chunk).strip()
                     if chunk_text:
-                        chunks.append(chunk_text)
+                        yield chunk_text
                     current_chunk = []
                     current_length = 0
 
-                # Sub-split oversized piece recursively
-                sub_chunks = self._split(piece, next_separators)
-                for sub in sub_chunks:
-                    chunks.append(sub)
+                # Sub-split oversized piece recursively via generator streaming
+                yield from self._split_stream(piece, next_separators)
                 continue
 
             piece_len = len(piece)
@@ -172,7 +169,7 @@ class RecursiveTextSplitter(BaseTextSplitter):
                 if current_chunk:
                     chunk_text = active_sep.join(current_chunk).strip()
                     if chunk_text:
-                        chunks.append(chunk_text)
+                        yield chunk_text
                     # Handle overlap by taking tail elements from previous chunk
                     if self.chunk_overlap > 0:
                         overlap_elements: list[str] = []
@@ -207,9 +204,10 @@ class RecursiveTextSplitter(BaseTextSplitter):
         if current_chunk:
             chunk_text = active_sep.join(current_chunk).strip()
             if chunk_text:
-                chunks.append(chunk_text)
+                yield chunk_text
 
-        return chunks
+    def _split(self, text: str, separators: list[str]) -> list[str]:
+        return list(self._split_stream(text, separators))
 
-    def split_text(self, text: str) -> list[str]:
-        return self._split(text, self.separators)
+    def split_text_stream(self, text: str) -> Iterator[str]:
+        return self._split_stream(text, self.separators)
