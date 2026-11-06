@@ -27,11 +27,17 @@ class MCPAuthMiddleware:
         self,
         app: Any,
         expected_api_key: str,
-        allow_query_param: bool = True,
+        allow_query_param: bool = False,
     ) -> None:
         self.app = app
         self.expected_api_key = expected_api_key
         self.allow_query_param = allow_query_param
+        if allow_query_param:
+            logger.warning(
+                "MCPAuthMiddleware: query-parameter authentication is enabled. "
+                "API keys in URL query strings are logged by web servers, proxies, and appear in "
+                "browser history. Only enable this if required for browser-based EventSource clients."
+            )
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
         if scope["type"] != "http":
@@ -91,7 +97,7 @@ def mount_mcp_to_fastapi(
     mcp_server: FrameworkMCPServer,
     prefix: str = "/mcp",
     api_key: Optional[str] = None,
-    allow_query_param_auth: bool = True,
+    allow_query_param_auth: bool = False,
 ) -> None:
     """Mount a FrameworkMCPServer as an SSE ASGI sub-application into FastAPI.
 

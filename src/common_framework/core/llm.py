@@ -190,11 +190,12 @@ class OpenAICompatibleClient(BaseLLMClient):
                     response.raise_for_status()
                     data = response.json()
 
-                    choice = data.get("choices", [{}])[0]
-                    message = choice.get("message", {})
+                    choices = data.get("choices") or [{}]
+                    choice = choices[0] if choices else {}
+                    message = choice.get("message") or {}
                     content = message.get("content", "") or ""
 
-                    usage_data = data.get("usage", {})
+                    usage_data = data.get("usage") or {}
                     usage = TokenUsage(
                         prompt_tokens=usage_data.get("prompt_tokens", 0),
                         completion_tokens=usage_data.get("completion_tokens", 0),

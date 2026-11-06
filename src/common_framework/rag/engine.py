@@ -93,12 +93,15 @@ class RAGEngine:
                 filter_metadata=filter_metadata,
             )
 
-        return await self.vector_store.similarity_search(
-            query_embedding=query_emb,
-            top_k=top_k,
-            collection=collection,
-            filter_metadata=filter_metadata,
-        )
+        if mode == "dense":
+            return await self.vector_store.similarity_search(
+                query_embedding=query_emb,
+                top_k=top_k,
+                collection=collection,
+                filter_metadata=filter_metadata,
+            )
+
+        raise ValueError(f"Unknown retrieval mode: {mode!r}. Supported modes: 'hybrid', 'dense'.")
 
     async def query(
         self,

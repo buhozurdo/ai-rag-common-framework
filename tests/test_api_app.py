@@ -149,7 +149,11 @@ async def test_exception_handler_internal_errors(test_app):
 
 @pytest.mark.asyncio
 async def test_cors_headers(test_app):
-    """Verify CORS preflight headers are returned."""
+    """Verify CORS preflight headers are returned.
+
+    With wildcard origin (default), allow_credentials must be False per the CORS spec.
+    When explicit origins are provided, allow_credentials is enabled.
+    """
     transport = httpx.ASGITransport(app=test_app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
         res = await client.options(
@@ -159,5 +163,24 @@ async def test_cors_headers(test_app):
                 "Access-Control-Request-Method": "GET",
             },
         )
-        assert res.headers.get("access-control-allow-origin") in ("*", "http://localhost:3000")
+        # Wildcard origin is set by default — credentials must NOT be allowed
+        assert res.headers.get("access-control-allow-origin") == "*"
+        # allow_credentials must NOT be "true" when wildcard origin is active (CORS spec §8.6)
+        assert res.headers.get("access-control-allow-credentials") != "true"
+
+
+@pytest.mark.asyncio
+async def test_cors_headers_with_explicit_origins():
+    """Verify credentials are enabled when explicit origins are provided."""
+    from common_framework.api.app import create_app as _create_app
+    app = _create_app(cors_origins=["http://localhost:3000", "https://example.com"])
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        res = await client.options(
+            "/healthz",
+            headers={
+                "Origin": "http://localhost:3000",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
         assert res.headers.get("access-control-allow-credentials") == "true"

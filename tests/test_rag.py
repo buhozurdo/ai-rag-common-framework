@@ -56,13 +56,27 @@ async def test_mock_embedding_provider():
 
 
 def test_cosine_similarity():
-    """Verify cosine similarity calculation."""
-    v1 = [1.0, 0.0]
-    v2 = [1.0, 0.0]
-    v3 = [0.0, 1.0]
+    """Verify cosine similarity calculation uses uniform [-1,+1] → [0,1] mapping.
 
-    assert math.isclose(cosine_similarity(v1, v2), 1.0, rel_tol=1e-5)
-    assert math.isclose(cosine_similarity(v1, v3), 0.0, rel_tol=1e-5)
+    The uniform mapping (score+1)/2 preserves correct rank ordering:
+      - Identical vectors: cosine=1.0 → mapped=1.0
+      - Orthogonal vectors: cosine=0.0 → mapped=0.5
+      - Opposite vectors: cosine=-1.0 → mapped=0.0
+
+    The old conditional mapping (passthrough positive, (s+1)/2 negative) had a discontinuity
+    at zero: a barely-negative vector got ~0.5 while orthogonal stayed at 0.0, inverting ranking.
+    """
+    v1 = [1.0, 0.0]
+    v2 = [1.0, 0.0]   # identical
+    v3 = [0.0, 1.0]   # orthogonal
+    v4 = [-1.0, 0.0]  # opposite
+
+    assert math.isclose(cosine_similarity(v1, v2), 1.0, rel_tol=1e-5)   # identical → 1.0
+    assert math.isclose(cosine_similarity(v1, v3), 0.5, rel_tol=1e-5)   # orthogonal → 0.5
+    assert math.isclose(cosine_similarity(v1, v4), 0.0, rel_tol=1e-5)   # opposite → 0.0
+
+    # Ranking correctness: identical > orthogonal > opposite
+    assert cosine_similarity(v1, v2) > cosine_similarity(v1, v3) > cosine_similarity(v1, v4)
 
 
 @pytest.mark.asyncio
