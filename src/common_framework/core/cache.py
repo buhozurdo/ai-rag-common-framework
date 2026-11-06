@@ -17,7 +17,7 @@ from common_framework.core.llm import (
     TokenUsage,
 )
 from common_framework.rag.embeddings import BaseEmbeddingProvider, EmbeddingFactory
-from common_framework.rag.vectorstore import cosine_similarity
+from common_framework.rag.vectorstore import cosine_similarity, normalize_vector
 
 logger = logging.getLogger("common_framework.cache")
 
@@ -147,11 +147,18 @@ class SemanticCache:
         if query_emb is None:
             query_emb = await self.embedding_provider.embed_query(query)
 
+        q_unit, q_norm = normalize_vector(query_emb)
+        if q_norm == 0.0:
+            self._misses += 1
+            return None
+
         best_score = -1.0
         best_entry: Optional[SemanticCacheEntry] = None
 
         for entry in entries:
-            score = cosine_similarity(query_emb, entry.embedding)
+            # Dot product between pre-normalized query and stored pre-normalized entry
+            dot = sum(a * b for a, b in zip(q_unit, entry.embedding))
+            score = (max(-1.0, min(1.0, dot)) + 1.0) / 2.0
             if score > best_score:
                 best_score = score
                 best_entry = entry
@@ -200,10 +207,11 @@ class SemanticCache:
         if query_emb is None:
             query_emb = await self.embedding_provider.embed_query(query)
 
+        norm_emb, _ = normalize_vector(query_emb)
         entry_ttl = ttl if ttl is not None else self.default_ttl
         entry = SemanticCacheEntry(
             query=query,
-            embedding=query_emb,
+            embedding=norm_emb,
             response=response,
             namespace=namespace,
             metadata=metadata or {},
