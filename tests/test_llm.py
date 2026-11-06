@@ -228,3 +228,81 @@ def test_factory_creation():
 
     with pytest.raises(ConfigurationError):
         LLMFactory.create("unsupported_provider", settings=settings)
+
+
+@pytest.mark.asyncio
+async def test_openai_persistent_client_pool_and_lifecycle():
+    """Verify OpenAICompatibleClient reuses persistent httpx client and aclose closes it."""
+    client = OpenAICompatibleClient(api_key="sk-test")
+    assert client._internal_client is None
+
+    http_client1 = client._get_client()
+    assert http_client1 is not None
+    assert not http_client1.is_closed
+
+    http_client2 = client._get_client()
+    assert http_client1 is http_client2  # Exact same instance reused
+
+    await client.aclose()
+    assert http_client1.is_closed
+    assert client._internal_client is None
+
+    # Lazy re-instantiation after aclose
+    http_client3 = client._get_client()
+    assert http_client3 is not None
+    assert not http_client3.is_closed
+    assert http_client3 is not http_client1
+
+    # Test async context manager
+    async with OpenAICompatibleClient(api_key="sk-test") as ctx_client:
+        active_http = ctx_client._get_client()
+        assert not active_http.is_closed
+    assert active_http.is_closed
+
+
+@pytest.mark.asyncio
+async def test_anthropic_persistent_client_pool_and_lifecycle():
+    """Verify AnthropicClient reuses persistent httpx client and aclose closes it."""
+    from common_framework.core.llm import AnthropicClient
+
+    client = AnthropicClient(api_key="sk-ant-test")
+    http1 = client._get_client()
+    http2 = client._get_client()
+    assert http1 is http2
+
+    await client.aclose()
+    assert http1.is_closed
+    assert client._internal_client is None
+
+
+@pytest.mark.asyncio
+async def test_embedding_persistent_client_pool_and_lifecycle():
+    """Verify OpenAICompatibleEmbeddingProvider reuses persistent httpx client."""
+    from common_framework.rag.embeddings import OpenAICompatibleEmbeddingProvider
+
+    provider = OpenAICompatibleEmbeddingProvider(api_key="sk-test")
+    http1 = provider._get_client()
+    http2 = provider._get_client()
+    assert http1 is http2
+
+    async with provider:
+        assert not http1.is_closed
+    assert http1.is_closed
+
+
+@pytest.mark.asyncio
+async def test_fallback_client_aclose_cascading():
+    """Verify FallbackLLMClient cascades aclose to all candidates."""
+    from common_framework.core.llm import FallbackLLMClient
+
+    c1 = OpenAICompatibleClient(api_key="sk-test-1")
+    c2 = OpenAICompatibleClient(api_key="sk-test-2")
+    http1 = c1._get_client()
+    http2 = c2._get_client()
+
+    fallback = FallbackLLMClient(clients=[c1, c2])
+    await fallback.aclose()
+
+    assert http1.is_closed
+    assert http2.is_closed
+
