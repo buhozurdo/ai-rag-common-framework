@@ -111,3 +111,30 @@ async def test_tool_registry():
     assert "echo" not in registry
     with pytest.raises(ToolNotFoundError):
         registry.get("echo")
+
+
+@pytest.mark.asyncio
+async def test_sync_tool_non_blocking_thread_execution():
+    """Verify that synchronous tools execute in worker threads via asyncio.to_thread."""
+    import asyncio
+    import threading
+    import time
+
+    main_tid = threading.get_ident()
+
+    @tool
+    def blocking_calc(delay: float) -> int:
+        worker_tid = threading.get_ident()
+        assert worker_tid != main_tid  # Must run on a worker thread
+        time.sleep(delay)
+        return worker_tid
+
+    # Run two 0.05s tasks concurrently; if running on separate threads concurrently, total duration < 0.09s
+    start = time.perf_counter()
+    t1, t2 = await asyncio.gather(blocking_calc(0.05), blocking_calc(0.05))
+    elapsed = time.perf_counter() - start
+
+    assert t1 != main_tid
+    assert t2 != main_tid
+    assert elapsed < 0.09
+

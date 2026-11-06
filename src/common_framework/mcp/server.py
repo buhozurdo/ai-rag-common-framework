@@ -153,14 +153,51 @@ class FrameworkMCPServer:
         self,
         transport_security: Any = None,
         host: str = "127.0.0.1",
-        disable_dns_protection: bool = True,
+        disable_dns_protection: bool = False,
     ) -> Any:
-        """Return the Starlette ASGI application for SSE mounting in FastAPI/ASGI servers."""
-        if transport_security is None and disable_dns_protection:
+        """Return the Starlette ASGI application for SSE mounting in FastAPI/ASGI servers.
+
+        Args:
+            transport_security: Explicit TransportSecuritySettings instance.
+            host: Host interface to bind (default: '127.0.0.1').
+            disable_dns_protection: Set to True to disable DNS rebinding protection.
+                Defaults to False (secure default: DNS rebinding protection enabled).
+        """
+        if transport_security is None:
             try:
                 from mcp.server.transport_security import TransportSecuritySettings
 
-                transport_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
+                if disable_dns_protection:
+                    transport_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
+                else:
+                    hosts = [
+                        "127.0.0.1:*",
+                        "127.0.0.1",
+                        "localhost:*",
+                        "localhost",
+                        "[::1]:*",
+                        "::1",
+                        "testserver",
+                        "testserver:*",
+                    ]
+                    if host not in ("127.0.0.1", "localhost", "::1"):
+                        hosts.extend([f"{host}:*", host])
+                    origins = [
+                        "http://127.0.0.1:*",
+                        "http://127.0.0.1",
+                        "http://localhost:*",
+                        "http://localhost",
+                        "http://[::1]:*",
+                        "http://[::1]",
+                    ]
+                    if host not in ("127.0.0.1", "localhost", "::1"):
+                        origins.extend([f"http://{host}:*", f"http://{host}"])
+
+                    transport_security = TransportSecuritySettings(
+                        enable_dns_rebinding_protection=True,
+                        allowed_hosts=hosts,
+                        allowed_origins=origins,
+                    )
             except Exception:
                 transport_security = None
 

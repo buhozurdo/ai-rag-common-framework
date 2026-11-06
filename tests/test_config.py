@@ -26,7 +26,8 @@ def test_settings_custom_values():
     assert settings.framework_env == "production"
     assert settings.default_provider == "openai"
     assert settings.default_model == "gpt-4o-mini"
-    assert settings.openai_api_key == "sk-test-key-123"
+    assert settings.openai_api_key.get_secret_value() == "sk-test-key-123"
+    assert str(settings.openai_api_key) == "**********"
     assert settings.get_api_key_for_provider("openai") == "sk-test-key-123"
     assert settings.default_temperature == 0.2
 
@@ -36,3 +37,13 @@ def test_get_settings_cached():
     s1 = get_settings()
     s2 = get_settings()
     assert s1 is s2
+
+
+def test_settings_immutable_frozen():
+    """Verify Settings model is frozen and mutation raises an error across coroutines."""
+    settings = Settings()
+    with pytest.raises((TypeError, Exception)):
+        settings.log_level = "DEBUG"
+
+    with pytest.raises((TypeError, Exception)):
+        settings.default_model = "gpt-4o"

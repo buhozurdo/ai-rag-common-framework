@@ -21,6 +21,7 @@ from common_framework.core.exceptions import (
     RateLimitError,
     StructuredOutputError,
 )
+from common_framework.core.security import validate_provider_base_url
 
 logger = logging.getLogger("common_framework.llm")
 
@@ -140,6 +141,15 @@ class BaseLLMClient(ABC):
             finish_reason="stop",
         )
 
+    async def aclose(self) -> None:
+        """Release underlying network resources and close persistent HTTP connection pools."""
+        pass
+
+    async def __aenter__(self: Any) -> Any:
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        await self.aclose()
 
 
 class OpenAICompatibleClient(BaseLLMClient):
@@ -147,7 +157,7 @@ class OpenAICompatibleClient(BaseLLMClient):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: Optional[Union[str, SecretStr]] = None,
         base_url: Optional[str] = None,
         provider_name: str = "openai",
         settings: Optional[Settings] = None,
@@ -155,9 +165,27 @@ class OpenAICompatibleClient(BaseLLMClient):
     ) -> None:
         super().__init__(settings)
         self.provider_name = provider_name
-        self.api_key = api_key or self.settings.get_api_key_for_provider(provider_name)
-        self.base_url = (base_url or self.settings.openai_base_url).rstrip("/")
+        raw_key = api_key or self.settings.get_api_key_for_provider(provider_name)
+        self.api_key = (
+            raw_key.get_secret_value() if hasattr(raw_key, "get_secret_value") else raw_key
+        )
+        self.base_url = validate_provider_base_url(base_url or self.settings.openai_base_url)
         self._external_client = client
+        self._internal_client: Optional[httpx.AsyncClient] = None
+
+    def _get_client(self) -> httpx.AsyncClient:
+        """Return the active HTTP client: external injection or internal persistent pool."""
+        if self._external_client is not None:
+            return self._external_client
+        if self._internal_client is None or self._internal_client.is_closed:
+            self._internal_client = httpx.AsyncClient(timeout=self.settings.default_timeout_seconds)
+        return self._internal_client
+
+    async def aclose(self) -> None:
+        """Close persistent internal HTTP connection pool if owned."""
+        if self._internal_client is not None and not self._internal_client.is_closed:
+            await self._internal_client.aclose()
+            self._internal_client = None
 
     def _get_headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -281,11 +309,7 @@ class OpenAICompatibleClient(BaseLLMClient):
                     ) from exc
             raise LLMProviderError(f"Exceeded max retries ({max_retries}) connecting to {self.provider_name}")
 
-        if self._external_client:
-            return await _send(self._external_client)
-
-        async with httpx.AsyncClient() as http_client:
-            return await _send(http_client)
+        return await _send(self._get_client())
 
     async def structured_complete(
         self,
@@ -413,13 +437,8 @@ class OpenAICompatibleClient(BaseLLMClient):
                     provider=self.provider_name,
                 ) from exc
 
-        if self._external_client:
-            async for chunk in _stream(self._external_client):
-                yield chunk
-        else:
-            async with httpx.AsyncClient() as http_client:
-                async for chunk in _stream(http_client):
-                    yield chunk
+        async for chunk in _stream(self._get_client()):
+            yield chunk
 
 
 
@@ -428,12 +447,12 @@ class GeminiClient(OpenAICompatibleClient):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: Optional[Union[str, SecretStr]] = None,
         settings: Optional[Settings] = None,
         client: Optional[httpx.AsyncClient] = None,
     ) -> None:
         active_settings = settings or get_settings()
-        key = api_key or active_settings.gemini_api_key
+        key = api_key or active_settings.get_api_key_for_provider("gemini")
         # Gemini provides a direct OpenAI-compatible endpoint
         gemini_base = "https://generativelanguage.googleapis.com/v1beta/openai"
         super().__init__(
@@ -471,17 +490,35 @@ class AnthropicClient(BaseLLMClient):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: Optional[Union[str, SecretStr]] = None,
         base_url: Optional[str] = None,
         settings: Optional[Settings] = None,
         client: Optional[httpx.AsyncClient] = None,
     ) -> None:
         super().__init__(settings=settings)
-        self.api_key = api_key or self.settings.anthropic_api_key
+        raw_key = api_key or self.settings.get_api_key_for_provider("anthropic")
+        self.api_key: Optional[str] = (
+            raw_key.get_secret_value() if hasattr(raw_key, "get_secret_value") else raw_key
+        )
         default_url = getattr(self.settings, "anthropic_base_url", "https://api.anthropic.com/v1")
-        self.base_url = (base_url or default_url).rstrip("/")
+        self.base_url = validate_provider_base_url(base_url or default_url)
         self.provider_name = "anthropic"
         self._external_client = client
+        self._internal_client: Optional[httpx.AsyncClient] = None
+
+    def _get_client(self) -> httpx.AsyncClient:
+        """Return the active HTTP client: external injection or internal persistent pool."""
+        if self._external_client is not None:
+            return self._external_client
+        if self._internal_client is None or self._internal_client.is_closed:
+            self._internal_client = httpx.AsyncClient(timeout=self.settings.default_timeout_seconds)
+        return self._internal_client
+
+    async def aclose(self) -> None:
+        """Close persistent internal HTTP connection pool if owned."""
+        if self._internal_client is not None and not self._internal_client.is_closed:
+            await self._internal_client.aclose()
+            self._internal_client = None
 
     def _get_headers(self) -> dict[str, str]:
         headers = {
@@ -644,11 +681,7 @@ class AnthropicClient(BaseLLMClient):
                     ) from exc
             raise LLMProviderError(f"Exceeded max retries ({max_retries}) connecting to Anthropic")
 
-        if self._external_client:
-            return await _send(self._external_client)
-
-        async with httpx.AsyncClient() as http_client:
-            return await _send(http_client)
+        return await _send(self._get_client())
 
     async def structured_complete(
         self,
@@ -787,13 +820,8 @@ class AnthropicClient(BaseLLMClient):
                     provider="anthropic",
                 ) from exc
 
-        if self._external_client:
-            async for chunk in _stream(self._external_client):
-                yield chunk
-        else:
-            async with httpx.AsyncClient() as http_client:
-                async for chunk in _stream(http_client):
-                    yield chunk
+        async for chunk in _stream(self._get_client()):
+            yield chunk
 
 
 
@@ -860,6 +888,11 @@ class FallbackLLMClient(BaseLLMClient):
     def primary_client(self) -> BaseLLMClient:
         """Return the primary (first) candidate client in the cascade."""
         return self.candidates[0].client
+
+    async def aclose(self) -> None:
+        """Close connection pools across all configured candidate clients."""
+        for candidate in self.candidates:
+            await candidate.client.aclose()
 
     async def complete(
         self,

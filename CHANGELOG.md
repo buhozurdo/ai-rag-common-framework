@@ -4,6 +4,28 @@ All notable changes to this project are documented in this file following [Keep 
 
 ---
 
+## [v0.5.0] - 2026-11-06
+
+### Added
+- **Path Traversal Protection (`rag/vectorstore.py`):** Path traversal guard using `_resolve_safe_path` with configurable `base_dir` containment.
+- **Configurable DNS Rebinding Protection (`api/mcp.py`):** Host header validation with local/test allowlist, rejecting spoofed hosts with HTTP 421.
+- **SSRF Base URL Validation (`core/security.py`):** Validation blocking private, link-local, and cloud metadata IPs on provider base URLs.
+- **Secret Masking & Settings Immutability (`core/config.py`):** Converted API keys to `pydantic.SecretStr` and froze `Settings`.
+- **Structured XML Prompt Context (`rag/engine.py`):** XML `<context><document id="...">` document wrapping defending against prompt injection.
+- **Collection Coroutine Safety (`rag/vectorstore.py`):** Per-collection `asyncio.Lock` preventing dictionary mutation during concurrent operations.
+- **Shared Persistent HTTP Connection Pool (`core/llm.py`, `rag/embeddings.py`):** Reusable `httpx.AsyncClient` pool with `aclose()` lifecycle.
+- **Non-Blocking Synchronous Tools (`tools/base.py`):** Offloaded synchronous tools to worker threads via `asyncio.to_thread`.
+- **Defensive RRF Fusion Guard (`rag/bm25.py`):** Guard against ZeroDivisionError and negative weights in reciprocal rank fusion.
+
+---
+
+## [v0.5.0-beta] - 2026-11-06
+
+### Added
+- Stabilization pre-release with security hardening, concurrency locks, and persistent connection pool management.
+
+---
+
 ## [v0.5.0-alpha] - 2026-11-05
 
 ### Added

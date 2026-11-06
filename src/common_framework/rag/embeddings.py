@@ -10,6 +10,7 @@ import httpx
 
 from common_framework.core.config import Settings, get_settings
 from common_framework.core.exceptions import AuthenticationError, ConfigurationError, LLMProviderError
+from common_framework.core.security import validate_provider_base_url
 
 
 class BaseEmbeddingProvider(ABC):
@@ -27,6 +28,16 @@ class BaseEmbeddingProvider(ABC):
     async def embed_documents(self, texts: list[str]) -> list[list[float]]:
         """Generate vector embeddings for a list of document strings."""
         pass
+
+    async def aclose(self) -> None:
+        """Release underlying network resources and close persistent HTTP connection pools."""
+        pass
+
+    async def __aenter__(self: Any) -> Any:
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        await self.aclose()
 
 
 class MockEmbeddingProvider(BaseEmbeddingProvider):
@@ -65,7 +76,7 @@ class OpenAICompatibleEmbeddingProvider(BaseEmbeddingProvider):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: Optional[Union[str, Any]] = None,
         base_url: Optional[str] = None,
         model: str = "text-embedding-3-small",
         provider_name: str = "openai",
@@ -74,10 +85,28 @@ class OpenAICompatibleEmbeddingProvider(BaseEmbeddingProvider):
     ) -> None:
         super().__init__(settings)
         self.provider_name = provider_name
-        self.api_key = api_key or self.settings.get_api_key_for_provider(provider_name)
-        self.base_url = (base_url or self.settings.openai_base_url).rstrip("/")
+        raw_key = api_key or self.settings.get_api_key_for_provider(provider_name)
+        self.api_key = (
+            raw_key.get_secret_value() if hasattr(raw_key, "get_secret_value") else raw_key
+        )
+        self.base_url = validate_provider_base_url(base_url or self.settings.openai_base_url)
         self.model = model
         self._external_client = client
+        self._internal_client: Optional[httpx.AsyncClient] = None
+
+    def _get_client(self) -> httpx.AsyncClient:
+        """Return the active HTTP client: external injection or internal persistent pool."""
+        if self._external_client is not None:
+            return self._external_client
+        if self._internal_client is None or self._internal_client.is_closed:
+            self._internal_client = httpx.AsyncClient(timeout=self.settings.default_timeout_seconds)
+        return self._internal_client
+
+    async def aclose(self) -> None:
+        """Close persistent internal HTTP connection pool if owned."""
+        if self._internal_client is not None and not self._internal_client.is_closed:
+            await self._internal_client.aclose()
+            self._internal_client = None
 
     def _get_headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -123,11 +152,7 @@ class OpenAICompatibleEmbeddingProvider(BaseEmbeddingProvider):
                     provider=self.provider_name,
                 ) from exc
 
-        if self._external_client:
-            return await _call(self._external_client)
-
-        async with httpx.AsyncClient() as client:
-            return await _call(client)
+        return await _call(self._get_client())
 
     async def embed_query(self, text: str) -> list[float]:
         results = await self._send_request([text])
@@ -172,7 +197,7 @@ class EmbeddingFactory:
             gemini_base = "https://generativelanguage.googleapis.com/v1beta/openai"
             target_model = model or "text-embedding-004"
             return OpenAICompatibleEmbeddingProvider(
-                api_key=cfg.gemini_api_key,
+                api_key=cfg.get_api_key_for_provider("gemini"),
                 base_url=gemini_base,
                 model=target_model,
                 provider_name="gemini",

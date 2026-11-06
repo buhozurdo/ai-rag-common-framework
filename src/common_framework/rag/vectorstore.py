@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 from abc import ABC, abstractmethod
@@ -119,7 +120,11 @@ class InMemoryVectorStore(BaseVectorStore):
     and opportunistic NumPy/BLAS GEMV matrix multiplication acceleration.
     """
 
-    def __init__(self, use_numpy: Optional[bool] = None) -> None:
+    def __init__(
+        self,
+        use_numpy: Optional[bool] = None,
+        base_dir: Optional[Union[str, Path]] = None,
+    ) -> None:
         # Partitioned storage: collection_name -> (doc_id -> Document)
         self._collections: dict[str, dict[str, Document]] = {}
         # Partitioned BM25 index: collection_name -> BM25Index
@@ -129,6 +134,66 @@ class InMemoryVectorStore(BaseVectorStore):
         # Matrix cache for BLAS GEMV: collection_name -> (doc_ids_list, np.ndarray)
         self._matrix_cache: dict[str, Optional[tuple[list[str], Any]]] = {}
         self.use_numpy = _HAS_NUMPY if use_numpy is None else (use_numpy and _HAS_NUMPY)
+        self.base_dir: Optional[Path] = Path(base_dir).resolve() if base_dir is not None else None
+        # Per-collection locks for coroutine/thread safety
+        self._locks: dict[str, asyncio.Lock] = {}
+
+    def _get_collection_lock(self, collection: str) -> asyncio.Lock:
+        """Retrieve or create an asyncio.Lock for isolated collection concurrency."""
+        if collection not in self._locks:
+            self._locks[collection] = asyncio.Lock()
+        return self._locks[collection]
+
+    def _resolve_safe_path(
+        self,
+        filepath: Union[str, Path],
+        base_dir: Optional[Union[str, Path]] = None,
+    ) -> Path:
+        """Resolve and validate filepath against a designated base directory.
+
+        Ensures the target filepath does not escape the allowed base directory via
+        path traversal (e.g. `../` or external absolute paths).
+
+        Args:
+            filepath: Target file path (relative or absolute).
+            base_dir: Optional override for the designated base directory. If None,
+                `self.base_dir` is used. If neither is set, relative paths are validated
+                against `Path.cwd()` to prevent escaping the working directory.
+
+        Returns:
+            Resolved absolute Path.
+
+        Raises:
+            ValueError: If the resolved path lies outside the designated base directory.
+        """
+        raw_path = Path(filepath)
+        designated = base_dir if base_dir is not None else self.base_dir
+
+        if designated is not None:
+            resolved_base = Path(designated).resolve()
+            if not raw_path.is_absolute():
+                candidate = (resolved_base / raw_path).resolve()
+            else:
+                candidate = raw_path.resolve()
+
+            if not candidate.is_relative_to(resolved_base):
+                raise ValueError(
+                    f"Path traversal detected: '{filepath}' resolves to '{candidate}', "
+                    f"which is outside designated base directory '{resolved_base}'"
+                )
+            return candidate
+
+        # No base_dir designated: protect cwd from relative traversal
+        if not raw_path.is_absolute():
+            candidate = (Path.cwd() / raw_path).resolve()
+            if not candidate.is_relative_to(Path.cwd()):
+                raise ValueError(
+                    f"Path traversal detected: '{filepath}' resolves to '{candidate}', "
+                    f"which is outside current working directory '{Path.cwd()}'"
+                )
+            return candidate
+
+        return raw_path.resolve()
 
     def _ensure_collection(self, collection: str) -> tuple[dict[str, Document], BM25Index]:
         if collection not in self._collections:
@@ -144,23 +209,24 @@ class InMemoryVectorStore(BaseVectorStore):
     async def add_documents(
         self, documents: list[Document], collection: str = DEFAULT_COLLECTION
     ) -> list[str]:
-        doc_store, bm25 = self._ensure_collection(collection)
-        norm_store = self._normalized_vectors[collection]
-        added_ids: list[str] = []
+        async with self._get_collection_lock(collection):
+            doc_store, bm25 = self._ensure_collection(collection)
+            norm_store = self._normalized_vectors[collection]
+            added_ids: list[str] = []
 
-        for doc in documents:
-            if doc.embedding is None:
-                raise ValueError(f"Document {doc.id!r} has no embedding. Generate embeddings before adding.")
-            doc_store[doc.id] = doc
-            unit_vec, _ = normalize_vector(doc.embedding)
-            norm_store[doc.id] = unit_vec
-            added_ids.append(doc.id)
+            for doc in documents:
+                if doc.embedding is None:
+                    raise ValueError(f"Document {doc.id!r} has no embedding. Generate embeddings before adding.")
+                doc_store[doc.id] = doc
+                unit_vec, _ = normalize_vector(doc.embedding)
+                norm_store[doc.id] = unit_vec
+                added_ids.append(doc.id)
 
-        bm25.add_documents(documents)
-        self._invalidate_matrix_cache(collection)
-        return added_ids
+            bm25.add_documents(documents)
+            self._invalidate_matrix_cache(collection)
+            return added_ids
 
-    async def similarity_search(
+    def _similarity_search_unlocked(
         self,
         query_embedding: list[float],
         top_k: int = 4,
@@ -244,6 +310,21 @@ class InMemoryVectorStore(BaseVectorStore):
         scored_py.sort(key=lambda x: x.score, reverse=True)
         return scored_py[:top_k]
 
+    async def similarity_search(
+        self,
+        query_embedding: list[float],
+        top_k: int = 4,
+        collection: str = DEFAULT_COLLECTION,
+        filter_metadata: Optional[dict[str, Any]] = None,
+    ) -> list[SearchResult]:
+        async with self._get_collection_lock(collection):
+            return self._similarity_search_unlocked(
+                query_embedding=query_embedding,
+                top_k=top_k,
+                collection=collection,
+                filter_metadata=filter_metadata,
+            )
+
     async def hybrid_search(
         self,
         query_text: str,
@@ -254,57 +335,62 @@ class InMemoryVectorStore(BaseVectorStore):
         sparse_weight: float = 0.5,
         filter_metadata: Optional[dict[str, Any]] = None,
     ) -> list[SearchResult]:
-        if collection not in self._collections:
-            return []
+        async with self._get_collection_lock(collection):
+            if collection not in self._collections:
+                return []
 
-        candidate_count = top_k * 3
+            candidate_count = top_k * 3
 
-        dense_results = await self.similarity_search(
-            query_embedding=query_embedding,
-            top_k=candidate_count,
-            collection=collection,
-            filter_metadata=filter_metadata,
-        )
+            dense_results = self._similarity_search_unlocked(
+                query_embedding=query_embedding,
+                top_k=candidate_count,
+                collection=collection,
+                filter_metadata=filter_metadata,
+            )
 
-        sparse_results = self._bm25_indexes[collection].search(
-            query=query_text,
-            top_k=candidate_count,
-            filter_metadata=filter_metadata,
-        )
+            sparse_results = self._bm25_indexes[collection].search(
+                query=query_text,
+                top_k=candidate_count,
+                filter_metadata=filter_metadata,
+            )
 
-        return reciprocal_rank_fusion(
-            dense_results=dense_results,
-            sparse_results=sparse_results,
-            k=60,
-            dense_weight=dense_weight,
-            sparse_weight=sparse_weight,
-            top_k=top_k,
-        )
+            return reciprocal_rank_fusion(
+                dense_results=dense_results,
+                sparse_results=sparse_results,
+                k=60,
+                dense_weight=dense_weight,
+                sparse_weight=sparse_weight,
+                top_k=top_k,
+            )
 
     async def delete(
         self, document_ids: list[str], collection: str = DEFAULT_COLLECTION
     ) -> None:
-        if collection in self._collections:
-            doc_store = self._collections[collection]
-            norm_store = self._normalized_vectors.get(collection, {})
-            for doc_id in document_ids:
-                doc_store.pop(doc_id, None)
-                norm_store.pop(doc_id, None)
-            self._bm25_indexes[collection].delete(document_ids)
-            self._invalidate_matrix_cache(collection)
+        async with self._get_collection_lock(collection):
+            if collection in self._collections:
+                doc_store = self._collections[collection]
+                norm_store = self._normalized_vectors.get(collection, {})
+                for doc_id in document_ids:
+                    doc_store.pop(doc_id, None)
+                    norm_store.pop(doc_id, None)
+                self._bm25_indexes[collection].delete(document_ids)
+                self._invalidate_matrix_cache(collection)
 
     async def delete_collection(self, collection: str) -> None:
-        self._collections.pop(collection, None)
-        self._bm25_indexes.pop(collection, None)
-        self._normalized_vectors.pop(collection, None)
-        self._matrix_cache.pop(collection, None)
+        async with self._get_collection_lock(collection):
+            self._collections.pop(collection, None)
+            self._bm25_indexes.pop(collection, None)
+            self._normalized_vectors.pop(collection, None)
+            self._matrix_cache.pop(collection, None)
+        self._locks.pop(collection, None)
 
     async def list_collections(self) -> list[str]:
         return list(self._collections.keys())
 
     async def count(self, collection: Optional[str] = None) -> int:
         if collection is not None:
-            return len(self._collections.get(collection, {}))
+            async with self._get_collection_lock(collection):
+                return len(self._collections.get(collection, {}))
         return sum(len(docs) for docs in self._collections.values())
 
     def get(self, document_id: str, collection: str = DEFAULT_COLLECTION) -> Optional[Document]:
@@ -317,10 +403,28 @@ class InMemoryVectorStore(BaseVectorStore):
         self._bm25_indexes.clear()
         self._normalized_vectors.clear()
         self._matrix_cache.clear()
+        self._locks.clear()
 
-    def save_to_json(self, filepath: Union[str, Path]) -> None:
-        """Serialize all collections, documents, and embeddings to a local JSON file."""
-        target_path = Path(filepath)
+    def save_to_json(
+        self,
+        filepath: Union[str, Path],
+        base_dir: Optional[Union[str, Path]] = None,
+    ) -> Path:
+        """Serialize all collections, documents, and embeddings to a local JSON file.
+
+        Args:
+            filepath: Destination file path (relative to base_dir or absolute).
+            base_dir: Optional base directory to restrict file writing to. If not
+                specified, uses instance `self.base_dir` if configured, or validates
+                against working directory to prevent path traversal.
+
+        Returns:
+            The resolved target Path where data was written.
+
+        Raises:
+            ValueError: If filepath violates path traversal restrictions.
+        """
+        target_path = self._resolve_safe_path(filepath, base_dir=base_dir)
         target_path.parent.mkdir(parents=True, exist_ok=True)
         serialized: dict[str, list[dict[str, Any]]] = {}
 
@@ -330,15 +434,34 @@ class InMemoryVectorStore(BaseVectorStore):
         with open(target_path, "w", encoding="utf-8") as f:
             json.dump(serialized, f, indent=2, ensure_ascii=False)
 
-    def load_from_json(self, filepath: Union[str, Path]) -> int:
+        return target_path
+
+    def load_from_json(
+        self,
+        filepath: Union[str, Path],
+        base_dir: Optional[Union[str, Path]] = None,
+    ) -> int:
         """Load collections and documents from a local JSON file and rebuild all indexes.
 
         Parses and validates all data before clearing in-memory state to prevent data loss
         on corrupt or malformed input files.
+
+        Args:
+            filepath: Source file path (relative to base_dir or absolute).
+            base_dir: Optional base directory to restrict file reading from. If not
+                specified, uses instance `self.base_dir` if configured, or validates
+                against working directory to prevent path traversal.
+
+        Returns:
+            Total number of documents loaded across all collections.
+
+        Raises:
+            ValueError: If filepath violates path traversal restrictions or file is malformed.
+            FileNotFoundError: If the resolved file does not exist.
         """
         import json as _json  # already imported at module level; alias avoids shadowing
 
-        source_path = Path(filepath)
+        source_path = self._resolve_safe_path(filepath, base_dir=base_dir)
         if not source_path.exists():
             raise FileNotFoundError(f"Vector store file not found: {source_path}")
 
