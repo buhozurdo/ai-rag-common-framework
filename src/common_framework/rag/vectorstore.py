@@ -30,8 +30,11 @@ def cosine_similarity(v1: list[float], v2: list[float]) -> float:
         return 0.0
 
     score = dot_product / (norm_v1 * norm_v2)
-    # Clamp score to [0.0, 1.0] for normalized cosine distance
-    return max(0.0, min(1.0, (score + 1.0) / 2.0 if score < 0 else score))
+    # Map the full cosine range [-1, +1] uniformly to [0.0, 1.0].
+    # Using conditional mapping (passthrough for positive, (s+1)/2 for negative) produces a
+    # discontinuity at 0: a barely-negative vector gets ~0.5 while an orthogonal vector stays at
+    # 0.0, completely inverting the semantic ordering. The uniform mapping preserves rank order.
+    return (score + 1.0) / 2.0
 
 
 class BaseVectorStore(ABC):
@@ -228,32 +231,50 @@ class InMemoryVectorStore(BaseVectorStore):
             json.dump(serialized, f, indent=2, ensure_ascii=False)
 
     def load_from_json(self, filepath: Union[str, Path]) -> int:
-        """Load collections and documents from a local JSON file and rebuild all indexes."""
+        """Load collections and documents from a local JSON file and rebuild all indexes.
+
+        Parses and validates all data before clearing in-memory state to prevent data loss
+        on corrupt or malformed input files.
+        """
+        import json as _json  # already imported at module level; alias avoids shadowing
+
         source_path = Path(filepath)
         if not source_path.exists():
             raise FileNotFoundError(f"Vector store file not found: {source_path}")
 
-        with open(source_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        try:
+            with open(source_path, "r", encoding="utf-8") as f:
+                data = _json.load(f)
+        except _json.JSONDecodeError as exc:
+            raise ValueError(f"Vector store file contains invalid JSON: {source_path}: {exc}") from exc
 
+        # Validate all documents BEFORE clearing current state to prevent data loss
+        try:
+            if isinstance(data, list):
+                loaded: dict[str, list[Document]] = {
+                    DEFAULT_COLLECTION: [Document.model_validate(item) for item in data]
+                }
+            elif isinstance(data, dict):
+                loaded = {
+                    coll: [Document.model_validate(item) for item in items]
+                    for coll, items in data.items()
+                }
+            else:
+                raise ValueError(
+                    f"Unexpected JSON structure in {source_path}: "
+                    f"expected list or dict, got {type(data).__name__}"
+                )
+        except Exception as exc:
+            raise ValueError(f"Failed to parse vector store data from {source_path}: {exc}") from exc
+
+        # All data validated — safe to replace current state
         self.clear()
         total_loaded = 0
-
-        # Handle both multi-collection format (dict of lists) and legacy single list
-        if isinstance(data, list):
-            doc_list = [Document.model_validate(item) for item in data]
-            store, bm25 = self._ensure_collection(DEFAULT_COLLECTION)
+        for coll_name, doc_list in loaded.items():
+            store, bm25 = self._ensure_collection(coll_name)
             for d in doc_list:
                 store[d.id] = d
             bm25.add_documents(doc_list)
-            total_loaded = len(doc_list)
-        elif isinstance(data, dict):
-            for coll_name, items in data.items():
-                doc_list = [Document.model_validate(item) for item in items]
-                store, bm25 = self._ensure_collection(coll_name)
-                for d in doc_list:
-                    store[d.id] = d
-                bm25.add_documents(doc_list)
-                total_loaded += len(doc_list)
+            total_loaded += len(doc_list)
 
         return total_loaded

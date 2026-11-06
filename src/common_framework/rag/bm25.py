@@ -28,8 +28,21 @@ class BM25Index:
         self._avg_doc_len: float = 0.0
 
     def add_documents(self, documents: list[Document]) -> None:
-        """Index a batch of documents for BM25 keyword scoring."""
+        """Index a batch of documents for BM25 keyword scoring.
+
+        If a document with the same ID already exists, it is replaced (upsert) to
+        prevent double-counting document frequencies and IDF score corruption.
+        """
         for doc in documents:
+            # Upsert: remove stale frequency counts for existing documents
+            if doc.id in self._documents:
+                old_tf = self._term_frequencies.pop(doc.id, Counter())
+                for term in old_tf:
+                    self._doc_frequencies[term] -= 1
+                    if self._doc_frequencies[term] <= 0:
+                        del self._doc_frequencies[term]
+                self._doc_lengths.pop(doc.id, None)
+
             tokens = tokenize(doc.content)
             self._documents[doc.id] = doc
             self._doc_lengths[doc.id] = len(tokens)

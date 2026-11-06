@@ -72,12 +72,13 @@ async def test_mount_mcp_auth_missing_and_invalid(sample_mcp_server):
 
 @pytest.mark.asyncio
 async def test_mount_mcp_auth_valid_methods(sample_mcp_server):
-    """Verify Bearer, X-API-Key, and query parameter credentials succeed."""
+    """Verify Bearer and X-API-Key credentials succeed; query param is disabled by default."""
     secret = "production-token-987"
     app = create_app(
         mcp_server=sample_mcp_server,
         mcp_prefix="/mcp",
         mcp_api_key=secret,
+        # allow_query_param_auth defaults to False (secure default)
     )
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
@@ -99,12 +100,26 @@ async def test_mount_mcp_auth_valid_methods(sample_mcp_server):
         assert res_x_key.status_code == 400
         assert "session_id is required" in res_x_key.text
 
-        # 3. Query parameter ?api_key=
+        # 3. Query parameter — rejected by default (allow_query_param_auth=False)
         res_query = await client.post(
             f"/mcp/messages/?api_key={secret}",
             json={},
         )
-        assert res_query.status_code == 400
+        assert res_query.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_mount_mcp_auth_query_param_opt_in(sample_mcp_server):
+    """Verify query parameter auth works when explicitly opted in."""
+    from common_framework.api.mcp import mount_mcp_to_fastapi as _mount
+    secret = "opt-in-query-token"
+    app = FastAPI()
+    _mount(app=app, mcp_server=sample_mcp_server, prefix="/mcp",
+           api_key=secret, allow_query_param_auth=True)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://localhost") as client:
+        res_query = await client.post(f"/mcp/messages/?api_key={secret}", json={})
+        assert res_query.status_code == 400  # Passes auth, fails at SSE session validation
         assert "session_id is required" in res_query.text
 
 

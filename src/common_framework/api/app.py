@@ -54,6 +54,7 @@ def setup_exception_handlers(app: FastAPI) -> None:
                 "message": exc.message,
                 "provider": exc.provider,
             },
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
     @app.exception_handler(ModelNotFoundError)
@@ -94,12 +95,15 @@ def setup_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(StructuredOutputError)
     async def structured_output_handler(request: Request, exc: StructuredOutputError) -> JSONResponse:
         logger.error("Structured output parsing error: %s", exc.message)
+        cfg = getattr(request.app.state, "settings", None) or get_settings()
+        # Do not expose raw LLM output in production — it may contain sensitive prompt templates
+        raw = None if cfg.framework_env == "production" else exc.raw_output
         return JSONResponse(
             status_code=status.HTTP_502_BAD_GATEWAY,
             content={
                 "error": "structured_output_validation_failed",
                 "message": exc.message,
-                "raw_output": exc.raw_output,
+                "raw_output": raw,
             },
         )
 
@@ -129,12 +133,15 @@ def setup_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(FrameworkError)
     async def generic_framework_handler(request: Request, exc: FrameworkError) -> JSONResponse:
         logger.error("Internal framework error: %s", exc.message)
+        cfg = getattr(request.app.state, "settings", None) or get_settings()
+        # Do not expose internal details in production responses
+        details = None if cfg.framework_env == "production" else exc.details
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
                 "error": "internal_framework_error",
                 "message": exc.message,
-                "details": exc.details,
+                "details": details,
             },
         )
 
@@ -178,10 +185,15 @@ def create_app(
     methods = list(cors_methods) if cors_methods is not None else ["*"]
     headers = list(cors_headers) if cors_headers is not None else ["*"]
 
+    # Per the CORS spec, Access-Control-Allow-Credentials cannot be combined with
+    # Access-Control-Allow-Origin: * — doing so enables cross-origin credential theft.
+    # Credentials are only enabled when explicit (non-wildcard) origins are provided.
+    allow_credentials = bool(cors_origins and "*" not in origins)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
-        allow_credentials=True,
+        allow_credentials=allow_credentials,
         allow_methods=methods,
         allow_headers=headers,
     )
