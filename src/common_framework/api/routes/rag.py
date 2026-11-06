@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
-from typing import Any, Literal, Optional, Sequence
+from typing import Any, AsyncIterator, Literal, Optional, Sequence
 from fastapi import APIRouter, Request, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from common_framework.rag.engine import RAGEngine
@@ -174,6 +176,45 @@ def create_rag_router(
             sources=sources,
             model=rag_res.model,
             tokens_used=rag_res.usage.total_tokens if rag_res.usage else None,
+        )
+
+    @router.post(
+        "/query/stream",
+        summary="Query RAG pipeline with Server-Sent Events (SSE) streaming",
+        description="Retrieve relevant context chunks and stream the synthesized answer token-by-token via SSE.",
+    )
+    async def query_rag_stream(req: RAGQueryRequest, request: Request) -> StreamingResponse:
+        rag = _resolve_engine(request)
+
+        async def _event_generator() -> AsyncIterator[str]:
+            async for chunk in rag.query_stream(
+                query=req.query,
+                top_k=req.top_k,
+                collection=req.collection,
+                filter_metadata=req.filter_metadata,
+                mode=req.mode,
+                system_prompt=req.system_prompt,
+                model=req.model,
+                temperature=req.temperature,
+            ):
+                payload = json.dumps(
+                    {
+                        "delta": chunk.delta,
+                        "model": chunk.model,
+                        "finish_reason": chunk.finish_reason,
+                    }
+                )
+                yield f"data: {payload}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(
+            _event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
         )
 
     @router.post(

@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any, AsyncIterator, Optional
 
-from common_framework.core.llm import BaseLLMClient, ChatMessage, LLMFactory, Role
+from common_framework.core.llm import (
+    BaseLLMClient,
+    ChatMessage,
+    ChatStreamChunk,
+    LLMFactory,
+    Role,
+)
 from common_framework.rag.embeddings import BaseEmbeddingProvider, EmbeddingFactory
 from common_framework.rag.models import Document, RAGResponse, SearchResult
 from common_framework.rag.splitters import BaseTextSplitter, RecursiveTextSplitter
@@ -153,6 +159,50 @@ class RAGEngine:
             model=llm_response.model,
             usage=llm_response.usage,
         )
+
+    async def query_stream(
+        self,
+        query: str,
+        top_k: int = 4,
+        collection: str = "default",
+        filter_metadata: Optional[dict[str, Any]] = None,
+        mode: str = "hybrid",
+        system_prompt: Optional[str] = None,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatStreamChunk]:
+        """Retrieve relevant context and stream the synthesized answer token-by-token."""
+        results = await self.retrieve(
+            query, top_k=top_k, collection=collection, filter_metadata=filter_metadata, mode=mode
+        )
+
+        context_parts = []
+        for r in results:
+            doc_id = r.document.metadata.get("parent_id", r.document.id)
+            context_parts.append(f"[Source: {doc_id}]\n{r.document.content}")
+
+        context_str = "\n\n---\n\n".join(context_parts) if context_parts else "No relevant context found."
+
+        sys_prompt = system_prompt or DEFAULT_RAG_SYSTEM_PROMPT
+        user_message_content = (
+            f"Context Information:\n{context_str}\n\n"
+            f"User Question: {query}\n\n"
+            "Answer:"
+        )
+
+        messages = [
+            ChatMessage(role=Role.SYSTEM, content=sys_prompt),
+            ChatMessage(role=Role.USER, content=user_message_content),
+        ]
+
+        async for chunk in self.llm_client.complete_stream(
+            messages=messages,
+            model=model,
+            temperature=temperature if temperature is not None else 0.0,
+            **kwargs,
+        ):
+            yield chunk
 
     def as_tool(
         self,
