@@ -40,6 +40,28 @@ class BaseEmbeddingProvider(ABC):
         await self.aclose()
 
 
+from functools import lru_cache
+
+
+@lru_cache(maxsize=4096)
+def _deterministic_mock_vector(dimension: int, text: str) -> tuple[float, ...]:
+    if not text:
+        return (0.0,) * dimension
+
+    # Generate deterministic vector based on MD5 and character codes
+    vec: list[float] = []
+    for i in range(dimension):
+        h = hashlib.sha256(f"{text}_{i}".encode("utf-8")).digest()
+        val = (int.from_bytes(h[:4], byteorder="big") / (2**32 - 1)) * 2.0 - 1.0
+        vec.append(val)
+
+    # L2 normalize vector
+    norm = math.sqrt(sum(x * x for x in vec))
+    if norm > 0:
+        vec = [x / norm for x in vec]
+    return tuple(vec)
+
+
 class MockEmbeddingProvider(BaseEmbeddingProvider):
     """Deterministic, lightweight embedding provider for testing and offline development."""
 
@@ -48,21 +70,7 @@ class MockEmbeddingProvider(BaseEmbeddingProvider):
         self.dimension = dimension
 
     def _generate_vector(self, text: str) -> list[float]:
-        if not text:
-            return [0.0] * self.dimension
-
-        # Generate deterministic vector based on MD5 and character codes
-        vec: list[float] = []
-        for i in range(self.dimension):
-            h = hashlib.sha256(f"{text}_{i}".encode("utf-8")).digest()
-            val = (int.from_bytes(h[:4], byteorder="big") / (2**32 - 1)) * 2.0 - 1.0
-            vec.append(val)
-
-        # L2 normalize vector
-        norm = math.sqrt(sum(x * x for x in vec))
-        if norm > 0:
-            vec = [x / norm for x in vec]
-        return vec
+        return list(_deterministic_mock_vector(self.dimension, text))
 
     async def embed_query(self, text: str) -> list[float]:
         return self._generate_vector(text)

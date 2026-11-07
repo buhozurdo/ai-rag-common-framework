@@ -21,6 +21,7 @@ class BaseTextSplitter(ABC):
             )
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
+        self._split_cache: dict[tuple[int, int], list[str]] = {}
 
     @abstractmethod
     def split_text_stream(self, text: str) -> Iterator[str]:
@@ -29,12 +30,27 @@ class BaseTextSplitter(ABC):
 
     def split_text(self, text: str) -> list[str]:
         """Split a raw text string into a list of chunks."""
-        return list(self.split_text_stream(text))
+        if not text:
+            return []
+
+        cache_key = (len(text), hash(text))
+        if hasattr(self, "_split_cache"):
+            cached = self._split_cache.get(cache_key)
+            if cached is not None:
+                return list(cached)
+        else:
+            self._split_cache = {}
+
+        chunks = list(self.split_text_stream(text))
+        if len(self._split_cache) >= 128:
+            self._split_cache.pop(next(iter(self._split_cache)))
+        self._split_cache[cache_key] = chunks
+        return list(chunks)
 
     def split_documents_stream(self, documents: Iterable[Document]) -> Iterator[Document]:
         """Lazily split a stream/iterable of documents into chunked Document objects."""
         for doc in documents:
-            for idx, chunk in enumerate(self.split_text_stream(doc.content)):
+            for idx, chunk in enumerate(self.split_text(doc.content)):
                 meta = dict(doc.metadata)
                 meta["parent_id"] = doc.id
                 meta["chunk_index"] = idx

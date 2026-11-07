@@ -133,6 +133,8 @@ class InMemoryVectorStore(BaseVectorStore):
         self._normalized_vectors: dict[str, dict[str, list[float]]] = {}
         # Matrix cache for BLAS GEMV: collection_name -> (doc_ids_list, np.ndarray)
         self._matrix_cache: dict[str, Optional[tuple[list[str], Any]]] = {}
+        # Filter indices cache: collection_name -> (filter_key -> np.ndarray of indices)
+        self._filter_indices_cache: dict[str, dict[tuple[tuple[str, Any], ...], Any]] = {}
         self.use_numpy = _HAS_NUMPY if use_numpy is None else (use_numpy and _HAS_NUMPY)
         self.base_dir: Optional[Path] = Path(base_dir).resolve() if base_dir is not None else None
         # Per-collection locks for coroutine/thread safety
@@ -205,6 +207,7 @@ class InMemoryVectorStore(BaseVectorStore):
 
     def _invalidate_matrix_cache(self, collection: str) -> None:
         self._matrix_cache[collection] = None
+        self._filter_indices_cache.pop(collection, None)
 
     async def add_documents(
         self, documents: list[Document], collection: str = DEFAULT_COLLECTION
@@ -272,31 +275,34 @@ class InMemoryVectorStore(BaseVectorStore):
             raw_scores = matrix.dot(q_arr)  # Single BLAS GEMV call
 
             if filter_metadata:
-                filter_items = tuple(filter_metadata.items())
-                matched: list[tuple[float, str]] = []
-                for idx in range(len(doc_ids)):
-                    d_id = doc_ids[idx]
-                    doc = doc_store[d_id]
-                    meta = doc.metadata
-                    match = True
-                    for k, v in filter_items:
-                        if meta.get(k) != v:
-                            match = False
-                            break
-                    if match:
-                        matched.append((raw_scores[idx], d_id))
+                filter_key = tuple(sorted(filter_metadata.items()))
+                coll_cache = self._filter_indices_cache.setdefault(collection, {})
+                idx_arr = coll_cache.get(filter_key)
+                if idx_arr is None:
+                    idx_list = []
+                    for idx, d_id in enumerate(doc_ids):
+                        meta = doc_store[d_id].metadata
+                        if all(meta.get(k) == v for k, v in filter_key):
+                            idx_list.append(idx)
+                    idx_arr = np.array(idx_list, dtype=np.int32)
+                    coll_cache[filter_key] = idx_arr
 
-                if not matched:
+                if len(idx_arr) == 0:
                     return []
 
-                matched.sort(key=lambda x: x[0], reverse=True)
-                top_matched = matched[:top_k]
+                sub_scores = raw_scores[idx_arr]
+                if len(idx_arr) <= top_k:
+                    top_pos = np.argsort(sub_scores)[::-1]
+                else:
+                    part = np.argpartition(sub_scores, -top_k)[-top_k:]
+                    top_pos = part[np.argsort(sub_scores[part])[::-1]]
+
                 return [
                     SearchResult(
-                        document=doc_store[d_id],
-                        score=(max(-1.0, min(1.0, float(score))) + 1.0) * 0.5,
+                        document=doc_store[doc_ids[idx_arr[i]]],
+                        score=(max(-1.0, min(1.0, float(sub_scores[i]))) + 1.0) * 0.5,
                     )
-                    for score, d_id in top_matched
+                    for i in top_pos
                 ]
 
             # No metadata filter: fast top_k index selection
@@ -407,6 +413,7 @@ class InMemoryVectorStore(BaseVectorStore):
             self._bm25_indexes.pop(collection, None)
             self._normalized_vectors.pop(collection, None)
             self._matrix_cache.pop(collection, None)
+            self._filter_indices_cache.pop(collection, None)
         self._locks.pop(collection, None)
 
     async def list_collections(self) -> list[str]:
@@ -428,6 +435,7 @@ class InMemoryVectorStore(BaseVectorStore):
         self._bm25_indexes.clear()
         self._normalized_vectors.clear()
         self._matrix_cache.clear()
+        self._filter_indices_cache.clear()
         self._locks.clear()
 
     def save_to_json(
