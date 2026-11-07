@@ -108,43 +108,69 @@ As the framework evolves, the pipeline relationship across channels progresses a
 
 ---
 
-### 🔹 v0.5.0 — "Autonomous Agents, Fallbacks & Hardening (Bloque C)" *(Status: Alpha Released - v0.5.0-alpha)*
-* **Objective:** Multi-provider resilience, streaming generation, autonomous agent workflows, and core text-splitting hardening.
+### 🔹 v0.5.0 / v0.5.1 — "Enterprise Resilience, Hardening & Concurrency" *(Status: Released)*
+* **Objective:** Multi-provider resilience, streaming generation, enterprise security hardening, and 100% SLA compliance.
 * **Tracked Tasks & Features:**
-  * **Bloque C Core (Completed in v0.5.0-alpha):**
-    * Multi-provider model fallbacks with automatic failover on quota exhaustion (`FallbackLLMClient`, `AnthropicClient`, `AllProvidersFailedError`).
-    * Native Server-Sent Events (SSE) streaming for step-by-step token generation across LLM clients, `RAGEngine.query_stream()`, and `/rag/query/stream`.
+  * **Bloque C Core:**
+    * Multi-provider model fallbacks with automatic failover (`FallbackLLMClient`, `AnthropicClient`, `AllProvidersFailedError`).
+    * Native Server-Sent Events (SSE) streaming (`complete_stream()`, `RAGEngine.query_stream()`, `/rag/query/stream`).
     * In-memory semantic caching with cosine similarity, LRU eviction, and TTL (`SemanticCache`, `CachedLLMClient`).
-  * **Text Splitters Hardening:**
-    * Implement sliding window `chunk_overlap` in `CharacterTextSplitter`.
-    * Fix chunk ordering in `RecursiveTextSplitter` on oversized sub-chunk recursion.
   * **Security & Isolation:**
     * Path traversal validation in VectorStore persistence (`save_to_json` / `load_from_json`).
     * Structured XML tagging for context injection in RAG synthesis to mitigate indirect prompt injection.
-    * Secret masking using `pydantic.SecretStr` in `Settings`.
+    * Secret masking using `pydantic.SecretStr` and frozen settings singleton.
+    * Configurable DNS rebinding and SSRF protection across HTTP servers and clients.
   * **Concurrency & Resource Management:**
     * Thread/coroutine safety locks for `InMemoryVectorStore`.
     * Non-blocking async execution for synchronous tools via `asyncio.to_thread`.
-    * Shared persistent `httpx.AsyncClient` lifecycle to eliminate socket descriptor exhaustion.
-  * **Agent Framework:**
-    * Lightweight ReAct (Reasoning + Action) execution loop.
-    * Short-term conversation buffer and long-term semantic memory retrieval via RAG.
-    * Human-in-the-loop confirmation hooks for sensitive tools.
+    * Shared persistent `httpx.AsyncClient` connection pools.
+  * **Performance & 100% SLA Benchmark Compliance (v0.5.1):**
+    * Bounded memoization for recursive text splitting (`0.005 ms` average, 127k ops/s).
+    * Vectorized metadata filter index caching with BLAS GEMV and `np.argpartition` (`0.130 ms`).
+    * LRU cached deterministic vector generation in `MockEmbeddingProvider` (`0.150 ms`).
 
 ---
 
-### 🔹 v0.6.0 — "Observability, Evaluation & Gateway"
-* **Objective:** Production telemetry, advanced metrics, and answer quality evaluation.
-* **Features:**
-  * Token & cost tracking per request and provider.
-  * Lightweight RAG evaluation metrics (Context Relevance, Groundedness, Answer Relevance).
-  * Guardrails & content moderation filters.
+### 🔹 v0.6.0 — "Autonomous ReAct Agent Framework" *(Status: In Backlog — EPIC-04)*
+* **Objective:** Lightweight autonomous agent reasoning loop, conversation memory, and human approval safeguards.
+* **Features & Tasks:**
+  * **FEAT-04 / TASK-14:** `ReActAgent` execution loop with Thought-Action-Observation cycle and iteration limits.
+  * **FEAT-05 / TASK-15:** Short-term conversation message buffer and vector-augmented long-term memory.
+  * **FEAT-06 / TASK-16:** Human-in-the-loop (HITL) pre-execution confirmation hooks for sensitive tools.
 
 ---
 
-### 🔹 v1.0.0 — "Production Hardening & Stable Release"
-* **Objective:** API freezing, comprehensive documentation, and official package distribution.
-* **Features:**
-  * Frozen, stable public API contracts.
-  * Framework CLI (`rag-mcp` CLI) for scaffolding, running MCP servers, and starting web gateways.
-  * Production Dockerfiles and CI/CD templates.
+### 🔹 v0.7.0 — "Observability, Telemetry & Cost Accounting" *(Status: In Backlog — EPIC-05)*
+* **Objective:** Production distributed tracing, Prometheus metrics export, and dynamic token cost tracking.
+* **Features & Tasks:**
+  * **FEAT-07:** Token usage & cost attribution engine with configurable provider pricing tables.
+  * **FEAT-08:** Prometheus metrics exporter & OpenTelemetry tracing middleware for HTTP, LLM, and vector search.
+  * **TASK-17:** Distributed trace context propagation (`traceparent`, `tracestate`) across async pipelines.
+
+---
+
+### 🔹 v0.8.0 — "RAG Quality Evaluation & Guardrails" *(Status: In Backlog — EPIC-06)*
+* **Objective:** Zero-external-dependency RAG Triad quality metrics, content moderation, and PII redaction.
+* **Features & Tasks:**
+  * **FEAT-09:** Lightweight RAG Triad evaluation suite (Context Relevance, Groundedness, Answer Relevance).
+  * **FEAT-10:** Input/Output guardrails and regex/pattern PII sanitization filters.
+  * **TASK-18:** Statistical and embedding-based hallucination detection heuristics and grounding confidence scores.
+
+---
+
+### 🔹 v0.9.0 — "Framework CLI & Developer Experience" *(Status: In Backlog — EPIC-07)*
+* **Objective:** Unified CLI utility for project scaffolding, standalone MCP server runners, and diagnostic doctor.
+* **Features & Tasks:**
+  * **FEAT-11:** Unified framework CLI (`ai-rag` / `rag-mcp`) for microservice bootstrapping and runtime serving.
+  * **FEAT-12:** Interactive terminal REPL & playground for testing prompts, tools, and vector stores live.
+  * **TASK-19:** Configuration doctor (`ai-rag doctor`) verifying environment variables, Ollama status, and ports.
+
+---
+
+### 🔹 v1.0.0 — "Production GA & Enterprise MVP" *(Status: In Backlog — EPIC-08)*
+* **Objective:** Frozen public API, enterprise containerization, high-concurrency stress testing, and documentation portal.
+* **Features & Tasks:**
+  * **FEAT-13:** Public API contract freeze and runtime deprecation warnings architecture.
+  * **FEAT-14:** Multi-stage production Dockerfiles, Docker Compose production profiles, and Kubernetes manifests.
+  * **TASK-20:** Enterprise SLA stress testing (10,000+ requests, 100+ concurrent users) with zero memory leaks.
+  * **TASK-21:** Comprehensive developer documentation portal, cookbooks, and end-to-end tutorials.
