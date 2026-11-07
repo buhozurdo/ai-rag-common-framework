@@ -133,6 +133,8 @@ class InMemoryVectorStore(BaseVectorStore):
         self._normalized_vectors: dict[str, dict[str, list[float]]] = {}
         # Matrix cache for BLAS GEMV: collection_name -> (doc_ids_list, np.ndarray)
         self._matrix_cache: dict[str, Optional[tuple[list[str], Any]]] = {}
+        # Filter indices cache: collection_name -> (filter_key -> np.ndarray of indices)
+        self._filter_indices_cache: dict[str, dict[tuple[tuple[str, Any], ...], Any]] = {}
         self.use_numpy = _HAS_NUMPY if use_numpy is None else (use_numpy and _HAS_NUMPY)
         self.base_dir: Optional[Path] = Path(base_dir).resolve() if base_dir is not None else None
         # Per-collection locks for coroutine/thread safety
@@ -205,6 +207,7 @@ class InMemoryVectorStore(BaseVectorStore):
 
     def _invalidate_matrix_cache(self, collection: str) -> None:
         self._matrix_cache[collection] = None
+        self._filter_indices_cache.pop(collection, None)
 
     async def add_documents(
         self, documents: list[Document], collection: str = DEFAULT_COLLECTION
@@ -247,11 +250,6 @@ class InMemoryVectorStore(BaseVectorStore):
                 f"Vector dimension mismatch: query vector has {len(query_embedding)} dims, document has {len(first_doc.embedding)} dims"
             )
 
-        # Pre-normalize query embedding once
-        q_unit, q_norm = normalize_vector(query_embedding)
-        if q_norm == 0.0:
-            return []
-
         norm_store = self._normalized_vectors.get(collection, {})
 
         # Fast path: NumPy BLAS matrix GEMV multiplication
@@ -268,33 +266,66 @@ class InMemoryVectorStore(BaseVectorStore):
             if len(doc_ids) == 0:
                 return []
 
-            q_arr = np.array(q_unit, dtype=np.float32)
+            q_arr = np.asarray(query_embedding, dtype=np.float32)
+            q_norm = float(np.linalg.norm(q_arr))
+            if q_norm == 0.0:
+                return []
+            q_arr /= q_norm
+
             raw_scores = matrix.dot(q_arr)  # Single BLAS GEMV call
-            scaled_scores = (np.clip(raw_scores, -1.0, 1.0) + 1.0) * 0.5
 
             if filter_metadata:
-                scored: list[SearchResult] = []
-                for idx, doc_id in enumerate(doc_ids):
-                    doc = doc_store[doc_id]
-                    if all(doc.metadata.get(k) == v for k, v in filter_metadata.items()):
-                        scored.append(SearchResult(document=doc, score=float(scaled_scores[idx])))
-                scored.sort(key=lambda x: x.score, reverse=True)
-                return scored[:top_k]
+                filter_key = tuple(sorted(filter_metadata.items()))
+                coll_cache = self._filter_indices_cache.setdefault(collection, {})
+                idx_arr = coll_cache.get(filter_key)
+                if idx_arr is None:
+                    idx_list = []
+                    for idx, d_id in enumerate(doc_ids):
+                        meta = doc_store[d_id].metadata
+                        if all(meta.get(k) == v for k, v in filter_key):
+                            idx_list.append(idx)
+                    idx_arr = np.array(idx_list, dtype=np.int32)
+                    coll_cache[filter_key] = idx_arr
+
+                if len(idx_arr) == 0:
+                    return []
+
+                sub_scores = raw_scores[idx_arr]
+                if len(idx_arr) <= top_k:
+                    top_pos = np.argsort(sub_scores)[::-1]
+                else:
+                    part = np.argpartition(sub_scores, -top_k)[-top_k:]
+                    top_pos = part[np.argsort(sub_scores[part])[::-1]]
+
+                return [
+                    SearchResult(
+                        document=doc_store[doc_ids[idx_arr[i]]],
+                        score=(max(-1.0, min(1.0, float(sub_scores[i]))) + 1.0) * 0.5,
+                    )
+                    for i in top_pos
+                ]
 
             # No metadata filter: fast top_k index selection
             if len(doc_ids) <= top_k:
-                top_indices = np.argsort(scaled_scores)[::-1]
+                top_indices = np.argsort(raw_scores)[::-1]
             else:
-                partition_idx = np.argpartition(scaled_scores, -top_k)[-top_k:]
-                top_indices = partition_idx[np.argsort(scaled_scores[partition_idx])[::-1]]
+                partition_idx = np.argpartition(raw_scores, -top_k)[-top_k:]
+                top_indices = partition_idx[np.argsort(raw_scores[partition_idx])[::-1]]
 
             return [
-                SearchResult(document=doc_store[doc_ids[idx]], score=float(scaled_scores[idx]))
+                SearchResult(
+                    document=doc_store[doc_ids[idx]],
+                    score=(max(-1.0, min(1.0, float(raw_scores[idx]))) + 1.0) * 0.5,
+                )
                 for idx in top_indices
             ]
 
         # Pure Python pre-normalized fallback (No NumPy)
-        scored_py: list[SearchResult] = []
+        q_unit, q_norm = normalize_vector(query_embedding)
+        if q_norm == 0.0:
+            return []
+
+        scored_py: list[tuple[float, Document]] = []
         for doc_id, doc in doc_store.items():
             if filter_metadata:
                 matches = all(doc.metadata.get(k) == v for k, v in filter_metadata.items())
@@ -305,10 +336,10 @@ class InMemoryVectorStore(BaseVectorStore):
             if unit_doc is not None:
                 dot = sum(a * b for a, b in zip(q_unit, unit_doc))
                 sim = (max(-1.0, min(1.0, dot)) + 1.0) / 2.0
-                scored_py.append(SearchResult(document=doc, score=sim))
+                scored_py.append((sim, doc))
 
-        scored_py.sort(key=lambda x: x.score, reverse=True)
-        return scored_py[:top_k]
+        scored_py.sort(key=lambda x: x[0], reverse=True)
+        return [SearchResult(document=doc, score=score) for score, doc in scored_py[:top_k]]
 
     async def similarity_search(
         self,
@@ -382,6 +413,7 @@ class InMemoryVectorStore(BaseVectorStore):
             self._bm25_indexes.pop(collection, None)
             self._normalized_vectors.pop(collection, None)
             self._matrix_cache.pop(collection, None)
+            self._filter_indices_cache.pop(collection, None)
         self._locks.pop(collection, None)
 
     async def list_collections(self) -> list[str]:
@@ -403,6 +435,7 @@ class InMemoryVectorStore(BaseVectorStore):
         self._bm25_indexes.clear()
         self._normalized_vectors.clear()
         self._matrix_cache.clear()
+        self._filter_indices_cache.clear()
         self._locks.clear()
 
     def save_to_json(

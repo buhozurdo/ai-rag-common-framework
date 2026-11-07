@@ -10,9 +10,12 @@ from typing import Any, Optional
 from common_framework.rag.models import Document, SearchResult
 
 
+_TOKEN_RE = re.compile(r"\b\w+\b")
+
+
 def tokenize(text: str) -> list[str]:
     """Tokenize text into lowercase alphanumeric terms."""
-    return re.findall(r"\b\w+\b", text.lower())
+    return _TOKEN_RE.findall(text.lower())
 
 
 class BM25Index:
