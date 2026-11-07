@@ -247,11 +247,6 @@ class InMemoryVectorStore(BaseVectorStore):
                 f"Vector dimension mismatch: query vector has {len(query_embedding)} dims, document has {len(first_doc.embedding)} dims"
             )
 
-        # Pre-normalize query embedding once
-        q_unit, q_norm = normalize_vector(query_embedding)
-        if q_norm == 0.0:
-            return []
-
         norm_store = self._normalized_vectors.get(collection, {})
 
         # Fast path: NumPy BLAS matrix GEMV multiplication
@@ -268,33 +263,63 @@ class InMemoryVectorStore(BaseVectorStore):
             if len(doc_ids) == 0:
                 return []
 
-            q_arr = np.array(q_unit, dtype=np.float32)
+            q_arr = np.asarray(query_embedding, dtype=np.float32)
+            q_norm = float(np.linalg.norm(q_arr))
+            if q_norm == 0.0:
+                return []
+            q_arr /= q_norm
+
             raw_scores = matrix.dot(q_arr)  # Single BLAS GEMV call
-            scaled_scores = (np.clip(raw_scores, -1.0, 1.0) + 1.0) * 0.5
 
             if filter_metadata:
-                scored: list[SearchResult] = []
-                for idx, doc_id in enumerate(doc_ids):
-                    doc = doc_store[doc_id]
-                    if all(doc.metadata.get(k) == v for k, v in filter_metadata.items()):
-                        scored.append(SearchResult(document=doc, score=float(scaled_scores[idx])))
-                scored.sort(key=lambda x: x.score, reverse=True)
-                return scored[:top_k]
+                filter_items = tuple(filter_metadata.items())
+                matched: list[tuple[float, str]] = []
+                for idx in range(len(doc_ids)):
+                    d_id = doc_ids[idx]
+                    doc = doc_store[d_id]
+                    meta = doc.metadata
+                    match = True
+                    for k, v in filter_items:
+                        if meta.get(k) != v:
+                            match = False
+                            break
+                    if match:
+                        matched.append((raw_scores[idx], d_id))
+
+                if not matched:
+                    return []
+
+                matched.sort(key=lambda x: x[0], reverse=True)
+                top_matched = matched[:top_k]
+                return [
+                    SearchResult(
+                        document=doc_store[d_id],
+                        score=(max(-1.0, min(1.0, float(score))) + 1.0) * 0.5,
+                    )
+                    for score, d_id in top_matched
+                ]
 
             # No metadata filter: fast top_k index selection
             if len(doc_ids) <= top_k:
-                top_indices = np.argsort(scaled_scores)[::-1]
+                top_indices = np.argsort(raw_scores)[::-1]
             else:
-                partition_idx = np.argpartition(scaled_scores, -top_k)[-top_k:]
-                top_indices = partition_idx[np.argsort(scaled_scores[partition_idx])[::-1]]
+                partition_idx = np.argpartition(raw_scores, -top_k)[-top_k:]
+                top_indices = partition_idx[np.argsort(raw_scores[partition_idx])[::-1]]
 
             return [
-                SearchResult(document=doc_store[doc_ids[idx]], score=float(scaled_scores[idx]))
+                SearchResult(
+                    document=doc_store[doc_ids[idx]],
+                    score=(max(-1.0, min(1.0, float(raw_scores[idx]))) + 1.0) * 0.5,
+                )
                 for idx in top_indices
             ]
 
         # Pure Python pre-normalized fallback (No NumPy)
-        scored_py: list[SearchResult] = []
+        q_unit, q_norm = normalize_vector(query_embedding)
+        if q_norm == 0.0:
+            return []
+
+        scored_py: list[tuple[float, Document]] = []
         for doc_id, doc in doc_store.items():
             if filter_metadata:
                 matches = all(doc.metadata.get(k) == v for k, v in filter_metadata.items())
@@ -305,10 +330,10 @@ class InMemoryVectorStore(BaseVectorStore):
             if unit_doc is not None:
                 dot = sum(a * b for a, b in zip(q_unit, unit_doc))
                 sim = (max(-1.0, min(1.0, dot)) + 1.0) / 2.0
-                scored_py.append(SearchResult(document=doc, score=sim))
+                scored_py.append((sim, doc))
 
-        scored_py.sort(key=lambda x: x.score, reverse=True)
-        return scored_py[:top_k]
+        scored_py.sort(key=lambda x: x[0], reverse=True)
+        return [SearchResult(document=doc, score=score) for score, doc in scored_py[:top_k]]
 
     async def similarity_search(
         self,
