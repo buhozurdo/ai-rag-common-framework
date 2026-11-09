@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file following [Keep 
 
 ---
 
+## [v0.8.0] - 2026-11-08
+
+### Added
+- **Cross-Encoder Reranking Engine (`rag/rerankers.py` - FEAT-ADV-01):** Implemented `BaseReranker` abstract interface with async and sync (`rerank_sync`) evaluation pipelines.
+- **Zero-Dependency Local Cross-Encoder (`rag/rerankers.py`):** Added `LocalCrossEncoderReranker` combining exact phrase matching, token coverage, and span compactness proximity metrics without external deep learning dependencies.
+- **Cohere Rerank Integration (`rag/rerankers.py`):** Enterprise-grade reranking via `CohereReranker` calling `api.cohere.com/v2/rerank` with SSRF URL validation and persistent HTTP connection pooling.
+- **Dynamic Reranker Factory (`rag/rerankers.py`):** Added `RerankerFactory.create(provider="local"|"cohere", ...)` for dynamic provider selection.
+- **Two-Stage RAG Pipeline (`rag/engine.py`):** Integrated optional `reranker` in `RAGEngine` retrieval. When configured, candidate chunks are retrieved from the vector store (`top_k * 3`) and refined via cross-encoder scoring down to `top_k`.
+
+---
+
 ## [v0.7.0] - 2026-11-08
 
 ### Added

@@ -15,6 +15,7 @@ from common_framework.core.llm import (
 )
 from common_framework.rag.embeddings import BaseEmbeddingProvider, EmbeddingFactory
 from common_framework.rag.models import Document, RAGResponse, SearchResult
+from common_framework.rag.rerankers import BaseReranker
 from common_framework.rag.splitters import BaseTextSplitter, RecursiveTextSplitter
 from common_framework.rag.vectorstore import BaseVectorStore, InMemoryVectorStore
 from common_framework.tools.base import Tool, tool
@@ -43,12 +44,14 @@ class RAGEngine:
         llm_client: Optional[BaseLLMClient] = None,
         default_splitter: Optional[BaseTextSplitter] = None,
         cache: Optional[SemanticCache] = None,
+        reranker: Optional[BaseReranker] = None,
     ) -> None:
         self.vector_store = vector_store or InMemoryVectorStore()
         self.embedding_provider = embedding_provider or EmbeddingFactory.create("mock")
         self.llm_client = llm_client or LLMFactory.create()
         self.default_splitter = default_splitter or RecursiveTextSplitter()
         self.cache = cache
+        self.reranker = reranker
 
     async def ingest_documents(
         self,
@@ -114,25 +117,31 @@ class RAGEngine:
     ) -> list[SearchResult]:
         """Perform search returning relevant document chunks via hybrid (BM25 + vector) or dense mode."""
         query_emb = await self.embedding_provider.embed_query(query)
+        candidate_k = top_k if self.reranker is None else max(top_k * 3, 10)
 
         if mode == "hybrid":
-            return await self.vector_store.hybrid_search(
+            results = await self.vector_store.hybrid_search(
                 query_text=query,
                 query_embedding=query_emb,
-                top_k=top_k,
+                top_k=candidate_k,
                 collection=collection,
                 filter_metadata=filter_metadata,
             )
-
-        if mode == "dense":
-            return await self.vector_store.similarity_search(
+        elif mode == "dense":
+            results = await self.vector_store.similarity_search(
                 query_embedding=query_emb,
-                top_k=top_k,
+                top_k=candidate_k,
                 collection=collection,
                 filter_metadata=filter_metadata,
             )
+        else:
+            raise ValueError(f"Unknown retrieval mode: {mode!r}. Supported modes: 'hybrid', 'dense'.")
 
-        raise ValueError(f"Unknown retrieval mode: {mode!r}. Supported modes: 'hybrid', 'dense'.")
+        if self.reranker is not None and results:
+            docs = [r.document for r in results]
+            return await self.reranker.rerank(query=query, documents=docs, top_k=top_k)
+
+        return results[:top_k]
 
     def _format_context(self, results: list[SearchResult]) -> str:
         """Format retrieved search results into structured XML tags to mitigate prompt injection."""

@@ -54,6 +54,12 @@ from common_framework.rag.embeddings import (
 )
 from common_framework.rag.engine import RAGEngine
 from common_framework.rag.models import Document, RAGResponse, SearchResult
+from common_framework.rag.rerankers import (
+    BaseReranker,
+    CohereReranker,
+    LocalCrossEncoderReranker,
+    RerankerFactory,
+)
 from common_framework.rag.splitters import (
     BaseTextSplitter,
     CharacterTextSplitter,
@@ -71,7 +77,7 @@ from common_framework.tools.registry import (
     global_tool_registry,
 )
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 __all__ = [
     "__version__",
@@ -131,4 +137,8 @@ __all__ = [
     "InMemoryVectorStore",
     "cosine_similarity",
     "RAGEngine",
+    "BaseReranker",
+    "LocalCrossEncoderReranker",
+    "CohereReranker",
+    "RerankerFactory",
 ]
