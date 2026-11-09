@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file following [Keep 
 
 ---
 
+## [v0.11.0] - 2026-11-09
+
+### Added
+- **Token Usage & Cost Attribution Engine (`observability/cost.py` - FEAT-07):** Implemented `TokenCostTracker` with dynamic pricing tables per model/provider (OpenAI, Anthropic, Cohere, and custom), calculating real-time dollar costs and aggregated expenses by user, session, or model.
+- **Prometheus Metrics Exporter & /metrics Endpoint (`observability/metrics.py` - FEAT-08):** Implemented zero-dependency `PrometheusRegistry` tracking HTTP latencies, LLM requests, token counts, vector search latencies, and semantic cache hit rates, exposing standard Prometheus text exposition format via `create_metrics_router()`.
+- **Distributed Context Propagation & OpenTelemetry Tracing (`observability/tracing.py` - FEAT-08 / TASK-17):** Implemented `TraceContext` supporting W3C `traceparent` header injection/extraction and `trace_span` sync/async context managers for nested span tracking across coroutines.
+
+---
+
 ## [v0.10.0] - 2026-11-09
 
 ### Added

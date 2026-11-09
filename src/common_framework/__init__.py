@@ -68,6 +68,26 @@ from common_framework.guardrails.sanitizer import (
     RedactionStrategy,
     SanitizationResult,
 )
+from common_framework.observability.cost import (
+    CostRecord,
+    ModelPricing,
+    TokenCostTracker,
+    global_cost_tracker,
+)
+from common_framework.observability.metrics import (
+    MetricFamily,
+    PrometheusRegistry,
+    create_metrics_router,
+    global_prometheus_registry,
+)
+from common_framework.observability.tracing import (
+    InMemorySpanExporter,
+    Span,
+    TraceContext,
+    get_current_trace_context,
+    global_span_exporter,
+    trace_span,
+)
 from common_framework.api.app import create_app
 from common_framework.api.mcp import mount_mcp_to_fastapi
 from common_framework.api.routes.rag import create_rag_router
@@ -109,7 +129,7 @@ from common_framework.tools.registry import (
     global_tool_registry,
 )
 
-__version__ = "0.10.0"
+__version__ = "0.11.0"
 
 __all__ = [
     "__version__",
@@ -195,4 +215,18 @@ __all__ = [
     "GuardrailViolation",
     "GuardrailResult",
     "PromptGuardrail",
+    "ModelPricing",
+    "CostRecord",
+    "TokenCostTracker",
+    "global_cost_tracker",
+    "MetricFamily",
+    "PrometheusRegistry",
+    "create_metrics_router",
+    "global_prometheus_registry",
+    "TraceContext",
+    "Span",
+    "InMemorySpanExporter",
+    "global_span_exporter",
+    "trace_span",
+    "get_current_trace_context",
 ]
