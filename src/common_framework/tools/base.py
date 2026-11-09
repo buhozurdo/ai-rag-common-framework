@@ -28,12 +28,14 @@ class Tool:
         fn: Callable[..., Any],
         name: Optional[str] = None,
         description: Optional[str] = None,
+        requires_approval: bool = False,
     ) -> None:
         self.fn = fn
         self.name = name or fn.__name__
         self.description = (
             description or inspect.getdoc(fn) or f"Tool executing {self.name}"
         ).strip()
+        self.requires_approval = requires_approval
         self.is_async = inspect.iscoroutinefunction(fn)
         self._args_model = self._create_args_model()
         self._parameters_schema = self._args_model.model_json_schema()
@@ -123,6 +125,7 @@ def tool(
     *,
     name: Optional[str] = None,
     description: Optional[str] = None,
+    requires_approval: bool = False,
 ) -> Any:
     """Decorator to declare a function as a reusable Tool.
 
@@ -131,15 +134,15 @@ def tool(
         def my_tool(x: int) -> int: ...
 
     Or:
-        @tool(name="custom_name", description="Custom description")
+        @tool(name="custom_name", description="Custom description", requires_approval=True)
         def my_tool(x: int) -> int: ...
     """
     if callable(fn_or_name):
-        return Tool(fn_or_name)
+        return Tool(fn_or_name, requires_approval=requires_approval)
 
     custom_name = name or (fn_or_name if isinstance(fn_or_name, str) else None)
 
     def decorator(fn: Callable[..., Any]) -> Tool:
-        return Tool(fn, name=custom_name, description=description)
+        return Tool(fn, name=custom_name, description=description, requires_approval=requires_approval)
 
     return decorator

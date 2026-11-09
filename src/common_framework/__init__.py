@@ -36,6 +36,25 @@ from common_framework.core.llm import (
     Role,
     TokenUsage,
 )
+from common_framework.agents.hitl import (
+    ApprovalDecision,
+    ApprovalRequest,
+    ApprovalResponse,
+    AutoApprovalHook,
+    BaseApprovalHook,
+    CallableApprovalHook,
+    QueueApprovalHook,
+)
+from common_framework.agents.memory import (
+    BaseMemory,
+    ConversationBufferMemory,
+    VectorMemory,
+)
+from common_framework.agents.react import (
+    AgentResponse,
+    AgentStep,
+    ReActAgent,
+)
 from common_framework.api.app import create_app
 from common_framework.api.mcp import mount_mcp_to_fastapi
 from common_framework.api.routes.rag import create_rag_router
@@ -141,4 +160,17 @@ __all__ = [
     "LocalCrossEncoderReranker",
     "CohereReranker",
     "RerankerFactory",
+    "ReActAgent",
+    "AgentStep",
+    "AgentResponse",
+    "BaseMemory",
+    "ConversationBufferMemory",
+    "VectorMemory",
+    "ApprovalDecision",
+    "ApprovalRequest",
+    "ApprovalResponse",
+    "BaseApprovalHook",
+    "AutoApprovalHook",
+    "CallableApprovalHook",
+    "QueueApprovalHook",
 ]
