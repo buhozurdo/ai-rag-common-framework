@@ -55,6 +55,19 @@ from common_framework.agents.react import (
     AgentStep,
     ReActAgent,
 )
+from common_framework.guardrails.moderation import (
+    GuardrailResult,
+    GuardrailViolation,
+    InjectionThreatLevel,
+    PromptGuardrail,
+)
+from common_framework.guardrails.sanitizer import (
+    PIIEntity,
+    PIISanitizer,
+    PIIType,
+    RedactionStrategy,
+    SanitizationResult,
+)
 from common_framework.api.app import create_app
 from common_framework.api.mcp import mount_mcp_to_fastapi
 from common_framework.api.routes.rag import create_rag_router
@@ -96,7 +109,7 @@ from common_framework.tools.registry import (
     global_tool_registry,
 )
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 
 __all__ = [
     "__version__",
@@ -173,4 +186,13 @@ __all__ = [
     "AutoApprovalHook",
     "CallableApprovalHook",
     "QueueApprovalHook",
+    "PIIType",
+    "RedactionStrategy",
+    "PIIEntity",
+    "SanitizationResult",
+    "PIISanitizer",
+    "InjectionThreatLevel",
+    "GuardrailViolation",
+    "GuardrailResult",
+    "PromptGuardrail",
 ]
