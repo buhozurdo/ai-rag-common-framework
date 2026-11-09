@@ -98,3 +98,26 @@ class AllProvidersFailedError(LLMProviderError):
         )
         self.errors = errors or []
 
+
+class MCPClientError(FrameworkError):
+    """Base exception for Model Context Protocol (MCP) client failures."""
+    pass
+
+
+class MCPConnectionError(MCPClientError):
+    """Raised when connecting to an external MCP server fails or times out."""
+    pass
+
+
+class MCPToolCallError(MCPClientError):
+    """Raised when an external MCP server tool execution fails."""
+
+    def __init__(
+        self,
+        tool_name: str,
+        message: str,
+        details: Optional[dict[str, Any]] = None,
+    ) -> None:
+        super().__init__(f"MCP tool call '{tool_name}' failed: {message}", details)
+        self.tool_name = tool_name
+

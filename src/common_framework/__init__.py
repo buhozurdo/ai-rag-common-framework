@@ -39,6 +39,11 @@ from common_framework.core.llm import (
 from common_framework.api.app import create_app
 from common_framework.api.mcp import mount_mcp_to_fastapi
 from common_framework.api.routes.rag import create_rag_router
+from common_framework.mcp.client import (
+    FrameworkMCPClient,
+    MCPRemoteTool,
+    create_mcp_client,
+)
 from common_framework.mcp.server import FrameworkMCPServer, create_mcp_server
 from common_framework.rag.bm25 import BM25Index, reciprocal_rank_fusion, tokenize
 from common_framework.rag.embeddings import (
@@ -104,6 +109,9 @@ __all__ = [
     "global_tool_registry",
     "FrameworkMCPServer",
     "create_mcp_server",
+    "FrameworkMCPClient",
+    "create_mcp_client",
+    "MCPRemoteTool",
     "create_app",
     "mount_mcp_to_fastapi",
     "create_rag_router",
