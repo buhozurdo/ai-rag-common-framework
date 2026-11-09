@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file following [Keep 
 
 ---
 
+## [v0.10.0] - 2026-11-09
+
+### Added
+- **PII Sanitizer & Redaction Engine (`guardrails/sanitizer.py` - FEAT-10):** High-throughput scanning and redaction for emails, phone numbers, credit card numbers (with Luhn checksum validation), Social Security Numbers (SSN), IPv4 addresses, and API keys/tokens.
+- **Configurable Redaction Strategies (`guardrails/sanitizer.py`):** Added `RedactionStrategy` support for `REPLACE` (typed tag e.g. `[REDACTED_EMAIL]`), `MASK` (partial character retention e.g. `****-****-****-1234`), and `HASH` (SHA-256 digest pseudonyms).
+- **Prompt Injection & Jailbreak Moderation (`guardrails/moderation.py` - FEAT-10):** Implemented `PromptGuardrail` screening inputs and outputs for instruction override attacks, persona hijacking (DAN modes), delimiter breakouts (`</context>`, `</document>`), and system prompt exfiltration probes.
+- **Threat Level Scoring & Guardrail Violations (`guardrails/moderation.py`):** Output structured `GuardrailResult` with calibrated `risk_score` (0.0 to 1.0) and granular `GuardrailViolation` classification.
+
+---
+
 ## [v0.9.0] - 2026-11-08
 
 ### Added

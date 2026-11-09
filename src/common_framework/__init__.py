@@ -109,7 +109,7 @@ from common_framework.tools.registry import (
     global_tool_registry,
 )
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 
 __all__ = [
     "__version__",
