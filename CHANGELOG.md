@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file following [Keep 
 
 ---
 
+## [v0.9.0] - 2026-11-08
+
+### Added
+- **Autonomous ReAct Agent Loop Engine (`agents/react.py` - FEAT-04 / TASK-14):** Implemented `ReActAgent` orchestrating multi-step Thought-Action-Observation decision cycles with step streaming (`run_stream()`), execution traces (`AgentStep`), and iteration limits.
+- **Conversational Memory Buffers (`agents/memory.py` - FEAT-05 / TASK-15):** Implemented `ConversationBufferMemory` with sliding window message retention preserving system prompts, and `VectorMemory` for persistent RAG-powered associative memory retrieval.
+- **Human-in-the-Loop (HITL) Governance Hooks (`agents/hitl.py` - FEAT-06 / TASK-16):** Added `BaseApprovalHook`, `AutoApprovalHook`, `CallableApprovalHook`, and `QueueApprovalHook` supporting `APPROVED`, `REJECTED`, and `MODIFIED` decisions for sensitive operations.
+- **Tool-Level Approval Flag (`tools/base.py`):** Added `requires_approval: bool` to `Tool` class and `@tool(..., requires_approval=True)` decorator.
+
+---
+
 ## [v0.8.0] - 2026-11-08
 
 ### Added
