@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file following [Keep 
 
 ---
 
+## [v0.7.0] - 2026-11-08
+
+### Added
+- **Bidirectional MCP Client (`mcp/client.py` - FEAT-EXT-01):** Implemented `FrameworkMCPClient` supporting both standard IO (`stdio`) subprocess execution and HTTP Server-Sent Events (`sse`) transports.
+- **Dynamic Tool Mounting into `ToolRegistry` (`mcp/client.py`):** Wrapped remote MCP server tools transparently as native `MCPRemoteTool` subclasses of `Tool`, enabling seamless registration in `ToolRegistry` and `global_tool_registry` with schema inspection and async tool execution.
+- **Factory Helper (`mcp/client.py`):** Added `create_mcp_client(transport="stdio"|"sse", ...)` helper for declarative instantiation.
+- **Dedicated Client Exceptions (`core/exceptions.py`):** Added `MCPClientError`, `MCPConnectionError`, and `MCPToolCallError` with contextual error details.
+
+---
+
 ## [v0.5.1] - 2026-11-07
 
 ### Performance & SLA Optimizations
