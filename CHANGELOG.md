@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file following [Keep 
 
 ---
 
+## [v0.15.0] - 2026-11-10
+
+### Added
+- **Embedded SQLite Vector Store (`rag/storage/sqlite.py` - FEAT-18):** Implemented `SQLiteVectorStore` providing ACID-compliant, single-file vector persistence powered by standard library `sqlite3` without external daemons or heavy C++ bindings.
+- **SQLite FTS5 Full-Text Search & BM25 Scoring:** Integrated native SQLite `fts5` virtual table indexing document contents, computing BM25 matching ranks with token sanitization and Unicode normalization.
+- **Vector BLOB Serialization & Fast Cosine Search:** Efficient binary serialization of float vectors as IEEE 754 32-bit floats (`struct.pack`/`unpack`) with opportunistic NumPy BLAS GEMV matrix multiplication acceleration and pure-Python dot-product fallback.
+- **RRF Hybrid Retrieval (`rag/storage/sqlite.py`):** Implemented native hybrid search fusing SQLite FTS5 BM25 keyword rankings with vector cosine similarity via Reciprocal Rank Fusion (RRF).
+- **Security & Multi-Collection Isolation:** Enforced strict path traversal protection restricting database files to configured base directories, multi-collection partitioning, granular JSON metadata filtering, and Write-Ahead Logging (`PRAGMA journal_mode=WAL`).
+
+---
+
 ## [v0.14.0] - 2026-11-10
 
 ### Added
