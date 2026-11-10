@@ -55,6 +55,15 @@ from common_framework.agents.react import (
     AgentStep,
     ReActAgent,
 )
+from common_framework.eval.hallucination import (
+    HallucinationDetector,
+    HallucinationReport,
+    SentenceClaim,
+)
+from common_framework.eval.triad import (
+    RAGTriadEvaluator,
+    RAGTriadScore,
+)
 from common_framework.guardrails.moderation import (
     GuardrailResult,
     GuardrailViolation,
@@ -129,7 +138,7 @@ from common_framework.tools.registry import (
     global_tool_registry,
 )
 
-__version__ = "0.11.0"
+__version__ = "0.12.0"
 
 __all__ = [
     "__version__",
@@ -229,4 +238,9 @@ __all__ = [
     "global_span_exporter",
     "trace_span",
     "get_current_trace_context",
+    "SentenceClaim",
+    "HallucinationReport",
+    "HallucinationDetector",
+    "RAGTriadScore",
+    "RAGTriadEvaluator",
 ]

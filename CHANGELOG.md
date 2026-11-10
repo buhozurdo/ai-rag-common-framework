@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file following [Keep 
 
 ---
 
+## [v0.12.0] - 2026-11-09
+
+### Added
+- **Lightweight RAG Triad Evaluation Suite (`eval/triad.py` - FEAT-09):** Implemented `RAGTriadEvaluator` evaluating the TruLens/RAG Triad metrics: Context Relevance, Groundedness (Faithfulness), and Answer Relevance, producing calibrated composite scores without external LLM evaluation dependencies.
+- **Hallucination Detection Heuristics & Grounding Scoring (`eval/hallucination.py` - TASK-18):** Implemented `HallucinationDetector` analyzing factual grounding with sentence-level claim extraction, content term filtering, and morphological suffix stemming (`_stem`), returning detailed `HallucinationReport` with attribution rates.
+- **Batch Evaluation & Metric Aggregation (`eval/triad.py`):** Added `evaluate_batch()` returning dataset pass rates, mean context relevance, mean groundedness, mean answer relevance, and composite distribution.
+
+---
+
 ## [v0.11.0] - 2026-11-09
 
 ### Added
