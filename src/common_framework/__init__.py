@@ -138,6 +138,7 @@ from common_framework.rag.vectorstore import (
     InMemoryVectorStore,
     cosine_similarity,
 )
+from common_framework.rag.storage.sqlite import SQLiteVectorStore
 from common_framework.tools.base import Tool, ToolExecutionError, tool
 from common_framework.tools.registry import (
     ToolNotFoundError,
@@ -210,6 +211,7 @@ __all__ = [
     "EmbeddingFactory",
     "BaseVectorStore",
     "InMemoryVectorStore",
+    "SQLiteVectorStore",
     "cosine_similarity",
     "RAGEngine",
     "BaseReranker",
