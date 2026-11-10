@@ -30,6 +30,10 @@ dependencies = [
     "typing-extensions>=4.12.0",
 ]
 
+[project.scripts]
+ai-rag = "common_framework.cli.main:main"
+rag-mcp = "common_framework.cli.main:main"
+
 [project.optional-dependencies]
 mcp = [
     "mcp>=1.0.0",

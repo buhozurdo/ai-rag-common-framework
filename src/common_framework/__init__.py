@@ -5,6 +5,7 @@ RAG systems, MCP (Model Context Protocol) servers, and AI microservices
 with minimal boilerplate.
 """
 
+from common_framework._version import __version__
 from common_framework.core.config import Settings, get_settings
 from common_framework.core.cache import (
     CachedLLMClient,
@@ -137,8 +138,15 @@ from common_framework.tools.registry import (
     ToolRegistry,
     global_tool_registry,
 )
-
-__version__ = "0.12.0"
+from common_framework.cli import (
+    DiagnosticCheck,
+    DoctorReport,
+    run_doctor,
+    CLIPlaygroundREPL,
+    scaffold_project,
+    create_parser,
+    main as cli_main,
+)
 
 __all__ = [
     "__version__",
@@ -243,4 +251,11 @@ __all__ = [
     "HallucinationDetector",
     "RAGTriadScore",
     "RAGTriadEvaluator",
+    "DiagnosticCheck",
+    "DoctorReport",
+    "run_doctor",
+    "CLIPlaygroundREPL",
+    "scaffold_project",
+    "create_parser",
+    "cli_main",
 ]
