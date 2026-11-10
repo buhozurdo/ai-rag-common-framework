@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file following [Keep 
 
 ---
 
+## [v0.13.0] - 2026-11-09
+
+### Added
+- **Unified Framework CLI (`cli/main.py` - FEAT-11):** Implemented zero-dependency `ai-rag` and `rag-mcp` console commands providing project bootstrapping (`init`), standalone MCP server running (`run-mcp`), FastAPI service running (`run-server`), runtime version inspection (`version`), and interactive REPL launching (`repl`).
+- **Configuration Doctor & Environment Diagnostics (`cli/doctor.py` - TASK-19):** Added `ai-rag doctor` running in-depth checks for Python version, configuration schema validation, API key detection (Gemini, OpenAI, Anthropic, Cohere), local Ollama reachability, directory write access, and optional dependencies with structured JSON and formatted text outputs.
+- **Interactive Terminal REPL & Tool Playground (`cli/repl.py` - FEAT-12):** Added `CLIPlaygroundREPL` supporting live tool inspection and invocation (`/tools`, `/call`), interactive RAG querying and document ingestion (`/query`, `/ingest`), diagnostics execution (`/doctor`), status inspection (`/status`), and LLM prompting.
+- **Microservice Scaffolding Generator (`cli/scaffold.py`):** Added starter project generator producing production-ready `main.py`, `.env.example`, and documentation.
+- **Synchronous Wrappers for RAGEngine & Tool:** Added `ingest_documents_sync`, `ingest_texts_sync`, `retrieve_sync`, `query_sync` on `RAGEngine`, and `execute_sync` on `Tool` class.
+
+---
+
 ## [v0.12.0] - 2026-11-09
 
 ### Added

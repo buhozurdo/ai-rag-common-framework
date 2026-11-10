@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-rag-common-framework"
-version = "0.12.0"
+version = "0.13.0"
 description = "A lightweight, modular, zero-bloat foundation framework for RAG, MCP servers, and modern AI workflows."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -29,6 +29,10 @@ dependencies = [
     "httpx>=0.28.0",
     "typing-extensions>=4.12.0",
 ]
+
+[project.scripts]
+ai-rag = "common_framework.cli.main:main"
+rag-mcp = "common_framework.cli.main:main"
 
 [project.optional-dependencies]
 mcp = [

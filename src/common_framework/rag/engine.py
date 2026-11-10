@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 import logging
 from typing import Any, AsyncIterator, Iterable, Optional, TYPE_CHECKING, Union
 
@@ -322,3 +324,71 @@ class RAGEngine:
             return {"query": query, "results": snippets}
 
         return rag_tool
+
+    def _run_sync(self, coro: Any) -> Any:
+        try:
+            asyncio.get_running_loop()
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                return pool.submit(asyncio.run, coro).result()
+        except RuntimeError:
+            return asyncio.run(coro)
+
+    def ingest_documents_sync(
+        self,
+        documents: Union[list[Document], Iterable[Document]],
+        collection: str = "default",
+        splitter: Optional[BaseTextSplitter] = None,
+    ) -> list[str]:
+        """Synchronously ingest documents into the collection."""
+        return self._run_sync(self.ingest_documents(documents, collection=collection, splitter=splitter))
+
+    ingest_sync = ingest_documents_sync
+
+    def ingest_texts_sync(
+        self,
+        texts: list[str],
+        collection: str = "default",
+        metadatas: Optional[list[dict[str, Any]]] = None,
+        splitter: Optional[BaseTextSplitter] = None,
+    ) -> list[str]:
+        """Synchronously ingest raw text strings into the collection."""
+        return self._run_sync(self.ingest_texts(texts, collection=collection, metadatas=metadatas, splitter=splitter))
+
+    def retrieve_sync(
+        self,
+        query: str,
+        top_k: int = 4,
+        collection: str = "default",
+        filter_metadata: Optional[dict[str, Any]] = None,
+        mode: str = "hybrid",
+    ) -> list[SearchResult]:
+        """Synchronously perform search returning relevant document chunks."""
+        return self._run_sync(self.retrieve(query, top_k=top_k, collection=collection, filter_metadata=filter_metadata, mode=mode))
+
+    def query_sync(
+        self,
+        query: str,
+        top_k: int = 4,
+        collection: str = "default",
+        filter_metadata: Optional[dict[str, Any]] = None,
+        mode: str = "hybrid",
+        system_prompt: Optional[str] = None,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        **kwargs: Any,
+    ) -> RAGResponse:
+        """Synchronously retrieve relevant context and synthesize an answer."""
+        return self._run_sync(
+            self.query(
+                query,
+                top_k=top_k,
+                collection=collection,
+                filter_metadata=filter_metadata,
+                mode=mode,
+                system_prompt=system_prompt,
+                model=model,
+                temperature=temperature,
+                **kwargs,
+            )
+        )
+

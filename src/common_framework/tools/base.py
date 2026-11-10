@@ -106,6 +106,16 @@ class Tool:
                 details={"inputs": validated_kwargs},
             ) from exc
 
+    def execute_sync(self, **kwargs: Any) -> Any:
+        """Synchronously execute the tool, managing the event loop automatically."""
+        try:
+            asyncio.get_running_loop()
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                return pool.submit(asyncio.run, self.execute(**kwargs)).result()
+        except RuntimeError:
+            return asyncio.run(self.execute(**kwargs))
+
     async def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Allow calling the tool directly as a callable object."""
         if args:
