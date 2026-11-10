@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file following [Keep 
 
 ---
 
+## [v0.14.0] - 2026-11-10
+
+### Added
+- **Multi-Query Retrieval Strategy (`rag/strategies.py` - FEAT-17):** Implemented `MultiQueryStrategy` generating parallel query variations via LLM prompt expansion to overcome distance-metric and lexical vocabulary limitations, executing concurrent vector/hybrid searches and fusing ranked candidates.
+- **Hypothetical Document Embeddings (`rag/strategies.py` - FEAT-17):** Implemented `HyDEStrategy` synthesizing hypothetical answer passages via LLM to project queries into document vector distribution space, with configurable hybrid weighting between hypothetical and original query representations.
+- **Generalized Multi-List Reciprocal Rank Fusion (`rag/strategies.py`):** Added `multi_list_rrf()` supporting arbitrary number of ranked candidate lists with configurable smoothing parameter $k$ and list weights.
+- **RRF Tie-Breaker Enhancement (`rag/bm25.py` & `rag/strategies.py`):** Added weighted raw score tracking in `reciprocal_rank_fusion` and `multi_list_rrf` to break rank ties deterministically using model confidence rather than insertion order.
+- **RAGEngine Strategy Integration (`rag/engine.py`):** Added native `retrieval_strategy` parameter to `RAGEngine.__init__`, `retrieve`, `query`, and `query_stream` with strategy override and recursion guards.
+
+---
+
 ## [v0.13.0] - 2026-11-09
 
 ### Added
