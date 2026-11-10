@@ -24,6 +24,7 @@ from common_framework.rag.vectorstore import (
     cosine_similarity,
 )
 
+from common_framework.rag.storage.sqlite import SQLiteVectorStore
 from common_framework.rag.strategies import (
     BaseRetrievalStrategy,
     HyDEStrategy,
@@ -47,6 +48,7 @@ __all__ = [
     "EmbeddingFactory",
     "BaseVectorStore",
     "InMemoryVectorStore",
+    "SQLiteVectorStore",
     "cosine_similarity",
     "RAGEngine",
     "BaseReranker",
