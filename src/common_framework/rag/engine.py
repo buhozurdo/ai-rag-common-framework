@@ -24,7 +24,9 @@ from common_framework.tools.base import Tool, tool
 
 if TYPE_CHECKING:
     from common_framework.core.cache import SemanticCache
+    from common_framework.rag.strategies import BaseRetrievalStrategy
 
+_DEFAULT_STRATEGY = object()
 logger = logging.getLogger("common_framework.rag")
 
 DEFAULT_RAG_SYSTEM_PROMPT = (
@@ -47,6 +49,7 @@ class RAGEngine:
         default_splitter: Optional[BaseTextSplitter] = None,
         cache: Optional[SemanticCache] = None,
         reranker: Optional[BaseReranker] = None,
+        retrieval_strategy: Optional[BaseRetrievalStrategy] = None,
     ) -> None:
         self.vector_store = vector_store or InMemoryVectorStore()
         self.embedding_provider = embedding_provider or EmbeddingFactory.create("mock")
@@ -54,6 +57,7 @@ class RAGEngine:
         self.default_splitter = default_splitter or RecursiveTextSplitter()
         self.cache = cache
         self.reranker = reranker
+        self.retrieval_strategy = retrieval_strategy
 
     async def ingest_documents(
         self,
@@ -116,8 +120,20 @@ class RAGEngine:
         collection: str = "default",
         filter_metadata: Optional[dict[str, Any]] = None,
         mode: str = "hybrid",
+        strategy: Any = _DEFAULT_STRATEGY,
     ) -> list[SearchResult]:
         """Perform search returning relevant document chunks via hybrid (BM25 + vector) or dense mode."""
+        effective_strategy = self.retrieval_strategy if strategy is _DEFAULT_STRATEGY else strategy
+        if effective_strategy is not None:
+            return await effective_strategy.retrieve(
+                query=query,
+                engine=self,
+                top_k=top_k,
+                collection=collection,
+                filter_metadata=filter_metadata,
+                mode=mode,
+            )
+
         query_emb = await self.embedding_provider.embed_query(query)
         candidate_k = top_k if self.reranker is None else max(top_k * 3, 10)
 
@@ -167,6 +183,7 @@ class RAGEngine:
         system_prompt: Optional[str] = None,
         model: Optional[str] = None,
         temperature: Optional[float] = None,
+        strategy: Any = _DEFAULT_STRATEGY,
         **kwargs: Any,
     ) -> RAGResponse:
         """Retrieve relevant context and synthesize an answer using the LLM."""
@@ -188,7 +205,12 @@ class RAGEngine:
                 )
 
         results = await self.retrieve(
-            query, top_k=top_k, collection=collection, filter_metadata=filter_metadata, mode=mode
+            query,
+            top_k=top_k,
+            collection=collection,
+            filter_metadata=filter_metadata,
+            mode=mode,
+            strategy=strategy,
         )
 
         context_str = self._format_context(results)
@@ -239,6 +261,7 @@ class RAGEngine:
         system_prompt: Optional[str] = None,
         model: Optional[str] = None,
         temperature: Optional[float] = None,
+        strategy: Any = _DEFAULT_STRATEGY,
         **kwargs: Any,
     ) -> AsyncIterator[ChatStreamChunk]:
         """Retrieve relevant context and stream the synthesized answer token-by-token."""
@@ -254,7 +277,12 @@ class RAGEngine:
                 return
 
         results = await self.retrieve(
-            query, top_k=top_k, collection=collection, filter_metadata=filter_metadata, mode=mode
+            query,
+            top_k=top_k,
+            collection=collection,
+            filter_metadata=filter_metadata,
+            mode=mode,
+            strategy=strategy,
         )
 
         context_str = self._format_context(results)
@@ -361,9 +389,19 @@ class RAGEngine:
         collection: str = "default",
         filter_metadata: Optional[dict[str, Any]] = None,
         mode: str = "hybrid",
+        strategy: Any = _DEFAULT_STRATEGY,
     ) -> list[SearchResult]:
         """Synchronously perform search returning relevant document chunks."""
-        return self._run_sync(self.retrieve(query, top_k=top_k, collection=collection, filter_metadata=filter_metadata, mode=mode))
+        return self._run_sync(
+            self.retrieve(
+                query,
+                top_k=top_k,
+                collection=collection,
+                filter_metadata=filter_metadata,
+                mode=mode,
+                strategy=strategy,
+            )
+        )
 
     def query_sync(
         self,
@@ -375,6 +413,7 @@ class RAGEngine:
         system_prompt: Optional[str] = None,
         model: Optional[str] = None,
         temperature: Optional[float] = None,
+        strategy: Any = _DEFAULT_STRATEGY,
         **kwargs: Any,
     ) -> RAGResponse:
         """Synchronously retrieve relevant context and synthesize an answer."""
@@ -388,6 +427,7 @@ class RAGEngine:
                 system_prompt=system_prompt,
                 model=model,
                 temperature=temperature,
+                strategy=strategy,
                 **kwargs,
             )
         )

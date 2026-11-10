@@ -24,6 +24,13 @@ from common_framework.rag.vectorstore import (
     cosine_similarity,
 )
 
+from common_framework.rag.strategies import (
+    BaseRetrievalStrategy,
+    HyDEStrategy,
+    MultiQueryStrategy,
+    multi_list_rrf,
+)
+
 __all__ = [
     "Document",
     "SearchResult",
@@ -46,4 +53,8 @@ __all__ = [
     "LocalCrossEncoderReranker",
     "CohereReranker",
     "RerankerFactory",
+    "BaseRetrievalStrategy",
+    "MultiQueryStrategy",
+    "HyDEStrategy",
+    "multi_list_rrf",
 ]
