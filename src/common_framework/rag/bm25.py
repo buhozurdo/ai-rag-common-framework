@@ -164,6 +164,7 @@ def reciprocal_rank_fusion(
         raise ValueError("At least one search weight (dense_weight or sparse_weight) must be positive")
 
     rrf_scores: dict[str, float] = {}
+    raw_scores: dict[str, float] = {}
     doc_map: dict[str, Document] = {}
 
     # Accumulate dense rankings
@@ -172,6 +173,7 @@ def reciprocal_rank_fusion(
             doc_id = res.document.id
             doc_map[doc_id] = res.document
             rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + (dense_weight / (k + rank))
+            raw_scores[doc_id] = raw_scores.get(doc_id, 0.0) + (dense_weight * res.score)
 
     # Accumulate sparse (BM25) rankings
     if sparse_weight > 0.0:
@@ -179,6 +181,7 @@ def reciprocal_rank_fusion(
             doc_id = res.document.id
             doc_map[doc_id] = res.document
             rrf_scores[doc_id] = rrf_scores.get(doc_id, 0.0) + (sparse_weight / (k + rank))
+            raw_scores[doc_id] = raw_scores.get(doc_id, 0.0) + (sparse_weight * res.score)
 
     if not rrf_scores:
         return []
@@ -188,11 +191,11 @@ def reciprocal_rank_fusion(
     if max_possible <= 0.0:
         return []
 
-    fused: list[SearchResult] = []
+    fused_items: list[tuple[float, float, Document]] = []
 
     for doc_id, raw_rrf in rrf_scores.items():
         normalized_score = min(1.0, max(0.0, raw_rrf / max_possible))
-        fused.append(SearchResult(document=doc_map[doc_id], score=normalized_score))
+        fused_items.append((normalized_score, raw_scores.get(doc_id, 0.0), doc_map[doc_id]))
 
-    fused.sort(key=lambda x: x.score, reverse=True)
-    return fused[:top_k]
+    fused_items.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    return [SearchResult(document=doc, score=score) for score, _, doc in fused_items[:top_k]]

@@ -127,6 +127,12 @@ from common_framework.rag.splitters import (
     CharacterTextSplitter,
     RecursiveTextSplitter,
 )
+from common_framework.rag.strategies import (
+    BaseRetrievalStrategy,
+    HyDEStrategy,
+    MultiQueryStrategy,
+    multi_list_rrf,
+)
 from common_framework.rag.vectorstore import (
     BaseVectorStore,
     InMemoryVectorStore,
@@ -210,6 +216,10 @@ __all__ = [
     "LocalCrossEncoderReranker",
     "CohereReranker",
     "RerankerFactory",
+    "BaseRetrievalStrategy",
+    "MultiQueryStrategy",
+    "HyDEStrategy",
+    "multi_list_rrf",
     "ReActAgent",
     "AgentStep",
     "AgentResponse",
