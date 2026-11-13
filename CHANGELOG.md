@@ -6,6 +6,23 @@ All notable changes to this project are documented in this file following [Keep 
 
 ## [v0.16.0] - 2026-11-13
 
+### Pull Request
+- **PR Title:** `release: v0.16.0 - Multi-Agent Supervisor & Delegation Pattern (FEAT-19)`
+- **PR Description:**
+  > ### Summary
+  > Releases `v0.16.0` introducing `FEAT-19: Multi-Agent Supervisor & Delegation Pattern` under `EPIC-10`.
+  > Establishes an Orchestrator-Workers hierarchy where an autonomous `AgentSupervisor` coordinates specialized agents (`ReActAgent`, coroutines, sync callables) via a text-based protocol, shared `AgentBus` state bus, and dual async/sync execution support.
+  >
+  > ### Key Changes
+  > - **Supervisor & State Bus:** Implemented `AgentSupervisor`, `AgentBus`, `DelegationStep`, and `SupervisorResponse` in `src/common_framework/agents/supervisor.py`.
+  > - **Public API Exports:** Exposed supervisor components in `src/common_framework/agents/__init__.py` and root `src/common_framework/__init__.py`.
+  > - **Test Suite:** Added 10 tests in `tests/test_supervisor.py`. Total suite: 299 tests passing 100% with 90% global coverage.
+  > - **Codebase Hygiene:** Standardized 100% of docstrings, comments, and tests across all enterprise suites and modules to English.
+  >
+  > ### Verification
+  > - `pytest tests/ examples/ --cov=common_framework`: 299/299 passed, 90% coverage.
+  > - Zero regressions or breaking changes to existing modules.
+
 ### Added
 - **Multi-Agent Supervisor & Delegation Pattern (`agents/supervisor.py` - FEAT-19):** Implemented `AgentSupervisor` orchestrating specialized worker agents (including `ReActAgent`, async coroutines, and sync callables) via autonomous multi-turn delegation and centralized final synthesis.
 - **Shared State Bus (`agents/supervisor.py`):** Added `AgentBus` providing coordinated shared memory across workers and supervisor during multi-agent task execution.
