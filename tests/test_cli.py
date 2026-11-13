@@ -209,3 +209,95 @@ def test_cli_run_server_and_run_mcp_dispatch():
         ret_mcp = cli_main(["run-mcp", "--name", "test-mcp", "--transport", "stdio"])
         assert ret_mcp == 0
         mock_server.run_stdio.assert_called_once()
+
+        # SSE transport dispatch
+        ret_sse = cli_main(["run-mcp", "--name", "test-mcp", "--transport", "sse", "--port", "8080"])
+        assert ret_sse == 0
+        mock_server.run_sse.assert_called_once_with(host="127.0.0.1", port=8080)
+
+
+def test_repl_edge_cases_and_llm_prompts():
+    """Verify REPL edge cases, parameter error paths, doctor command, and LLM prompt processing."""
+    outputs: list[str] = []
+    repl = CLIPlaygroundREPL(
+        llm_client=None,
+        rag_engine=None,
+        output_func=lambda msg: outputs.append(msg),
+    )
+
+    # 1. Unknown command
+    assert repl.handle_line("/unknown_command") is True
+    assert any("Unknown command '/unknown_command'" in o for o in outputs)
+
+    # 2. Query & ingest without RAGEngine
+    repl.handle_line("/query Test question")
+    assert any("No RAGEngine configured" in o for o in outputs)
+
+    repl.handle_line("/ingest Some text")
+    assert any("No RAGEngine configured" in o for o in outputs)
+
+    # 3. Call without tool name
+    repl.handle_line("/call")
+    assert any("Usage: /call <tool_name>" in o for o in outputs)
+
+    # 4. Call with invalid JSON
+    repl.handle_line("/call some_tool {bad json}")
+    assert any("Invalid JSON parameters:" in o for o in outputs)
+
+    # 5. Call missing tool
+    repl.handle_line("/call nonexistent_tool key=123")
+    assert any("Tool Execution Error:" in o for o in outputs)
+
+    # 6. LLM prompt without configured client
+    repl.handle_line("Explain quantum computing")
+    assert any("No LLM client configured" in o for o in outputs)
+
+    # 7. Doctor command
+    with patch("common_framework.cli.repl.run_doctor") as mock_doc:
+        mock_doc.return_value.format_text.return_value = "All systems operational"
+        repl.handle_line("/doctor")
+        assert any("All systems operational" in o for o in outputs)
+
+    # 8. Configure LLM client and verify prompt exchange
+    llm = DummyLLM()
+    llm.complete_sync = MagicMock(return_value=ChatResponse(content="Response from LLM", model="test-m"))
+    repl.llm_client = llm
+
+    repl.handle_line("What is the capital of Mars?")
+    assert any("Response from LLM" in o for o in outputs)
+    assert len(repl.history) == 2
+    assert repl.history[0].content == "What is the capital of Mars?"
+    assert repl.history[1].content == "Response from LLM"
+
+    # 9. LLM exception path
+    llm.complete_sync.side_effect = RuntimeError("Provider down")
+    repl.handle_line("Another question")
+    assert any("LLM Error: Provider down" in o for o in outputs)
+
+    # 10. REPL KeyboardInterrupt handled cleanly
+    interrupt_repl = CLIPlaygroundREPL(
+        input_func=MagicMock(side_effect=KeyboardInterrupt),
+        output_func=lambda msg: outputs.append(msg),
+    )
+    interrupt_repl.run()
+    assert any("Session ended." in o for o in outputs)
+
+
+def test_cli_dispatch_subcommands(tmp_path):
+    """Verify CLI main dispatch for doctor, init, and repl."""
+    # 1. Doctor command JSON format
+    with patch("common_framework.cli.doctor.run_doctor") as mock_doc:
+        mock_doc.return_value.format_json.return_value = '{"status": "ok"}'
+        mock_doc.return_value.healthy = True
+        assert cli_main(["doctor", "--format", "json"]) == 0
+
+    # 2. Init scaffolding
+    dest = tmp_path / "my_microservice"
+    assert cli_main(["init", str(dest)]) == 0
+    assert (dest / "main.py").exists()
+
+    # 3. REPL command invocation
+    with patch("common_framework.cli.repl.CLIPlaygroundREPL.run") as mock_run:
+        assert cli_main(["repl"]) == 0
+        mock_run.assert_called_once()
+

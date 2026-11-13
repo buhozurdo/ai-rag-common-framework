@@ -235,3 +235,111 @@ async def test_create_mcp_client_factory():
     assert client.command == sys.executable
     assert client.args == ["-m", "http.server"]
     assert "command=" in repr(client)
+
+    url_client = create_mcp_client(url="http://localhost:8000/sse")
+    assert url_client.url == "http://localhost:8000/sse"
+    assert "url=" in repr(url_client)
+
+
+@pytest.mark.asyncio
+async def test_mcp_client_resources(mock_session):
+    """Verify list_resources and read_resource functionality."""
+    res1 = MagicMock()
+    res1.uri = "memo://notes/1"
+    res1.name = "Note 1"
+    res1.description = "First note"
+    res1.mimeType = "text/plain"
+
+    list_res = MagicMock()
+    list_res.resources = [res1]
+    mock_session.list_resources = AsyncMock(return_value=list_res)
+
+    content1 = MagicMock()
+    content1.uri = "memo://notes/1"
+    content1.mimeType = "text/plain"
+    content1.text = "Hello world from memo"
+    content1.blob = None
+
+    read_res = MagicMock()
+    read_res.contents = [content1]
+    mock_session.read_resource = AsyncMock(return_value=read_res)
+
+    client = FrameworkMCPClient(read_stream=object(), write_stream=object())
+    with patch("mcp.ClientSession", return_value=mock_session):
+        async with client:
+            resources = await client.list_resources()
+            assert len(resources) == 1
+            assert resources[0]["uri"] == "memo://notes/1"
+            assert resources[0]["name"] == "Note 1"
+
+            contents = await client.read_resource("memo://notes/1")
+            assert len(contents) == 1
+            assert contents[0]["text"] == "Hello world from memo"
+
+
+@pytest.mark.asyncio
+async def test_mcp_client_prompts(mock_session):
+    """Verify list_prompts and get_prompt functionality."""
+    prompt1 = MagicMock()
+    prompt1.name = "summarize"
+    prompt1.description = "Summarize text"
+    arg1 = MagicMock()
+    arg1.name = "text"
+    arg1.description = "Text to summarize"
+    arg1.required = True
+    prompt1.arguments = [arg1]
+
+    list_p = MagicMock()
+    list_p.prompts = [prompt1]
+    mock_session.list_prompts = AsyncMock(return_value=list_p)
+
+    msg1 = MagicMock()
+    msg1.role = "user"
+    msg1.content = MagicMock()
+    msg1.content.text = "Please summarize: test document"
+
+    get_p = MagicMock()
+    get_p.messages = [msg1]
+    mock_session.get_prompt = AsyncMock(return_value=get_p)
+
+    client = FrameworkMCPClient(read_stream=object(), write_stream=object())
+    with patch("mcp.ClientSession", return_value=mock_session):
+        async with client:
+            prompts = await client.list_prompts()
+            assert len(prompts) == 1
+            assert prompts[0]["name"] == "summarize"
+            assert prompts[0]["arguments"][0]["name"] == "text"
+
+            messages = await client.get_prompt("summarize", {"text": "test document"})
+            assert len(messages) == 1
+            assert messages[0]["role"] == "user"
+            assert "Please summarize" in messages[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_mcp_client_resource_and_prompt_errors(mock_session):
+    """Verify error wrapping in MCPClientError for resources and prompts."""
+    mock_session.list_resources = AsyncMock(side_effect=RuntimeError("list_resources error"))
+    mock_session.read_resource = AsyncMock(side_effect=RuntimeError("read_resource error"))
+    mock_session.list_prompts = AsyncMock(side_effect=RuntimeError("list_prompts error"))
+    mock_session.get_prompt = AsyncMock(side_effect=RuntimeError("get_prompt error"))
+    mock_session.list_tools = AsyncMock(side_effect=RuntimeError("list_tools error"))
+
+    client = FrameworkMCPClient(read_stream=object(), write_stream=object())
+    with patch("mcp.ClientSession", return_value=mock_session):
+        async with client:
+            with pytest.raises(MCPClientError, match="Failed to list remote MCP resources"):
+                await client.list_resources()
+
+            with pytest.raises(MCPClientError, match="Failed to read resource"):
+                await client.read_resource("memo://fail")
+
+            with pytest.raises(MCPClientError, match="Failed to list remote prompts"):
+                await client.list_prompts()
+
+            with pytest.raises(MCPClientError, match="Failed to get prompt"):
+                await client.get_prompt("fail_prompt")
+
+            with pytest.raises(MCPClientError, match="Failed to list remote MCP tools"):
+                await client.list_tools()
+
