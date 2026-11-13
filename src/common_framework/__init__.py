@@ -56,6 +56,12 @@ from common_framework.agents.react import (
     AgentStep,
     ReActAgent,
 )
+from common_framework.agents.supervisor import (
+    AgentBus,
+    AgentSupervisor,
+    DelegationStep,
+    SupervisorResponse,
+)
 from common_framework.eval.hallucination import (
     HallucinationDetector,
     HallucinationReport,
@@ -225,6 +231,10 @@ __all__ = [
     "ReActAgent",
     "AgentStep",
     "AgentResponse",
+    "AgentSupervisor",
+    "AgentBus",
+    "DelegationStep",
+    "SupervisorResponse",
     "BaseMemory",
     "ConversationBufferMemory",
     "VectorMemory",
