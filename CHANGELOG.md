@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file following [Keep 
 
 ---
 
+## [v0.16.0] - 2026-11-13
+
+### Added
+- **Multi-Agent Supervisor & Delegation Pattern (`agents/supervisor.py` - FEAT-19):** Implemented `AgentSupervisor` orchestrating specialized worker agents (including `ReActAgent`, async coroutines, and sync callables) via autonomous multi-turn delegation and centralized final synthesis.
+- **Shared State Bus (`agents/supervisor.py`):** Added `AgentBus` providing coordinated shared memory across workers and supervisor during multi-agent task execution.
+- **Structured Delegation History:** Added `DelegationStep` and `SupervisorResponse` tracking step-by-step agent assignments, worker outputs, and bus snapshots.
+- **Synchronous Execution Convenience:** Added `AgentSupervisor.run_sync()` supporting both background thread execution within existing event loops and standalone synchronous calls.
+- **Standardized English Documentation:** Standardized 100% of docstrings, comments, and tests across all enterprise suites and modules to English.
+
+---
+
 ## [v0.15.0] - 2026-11-10
 
 ### Added
