@@ -202,18 +202,18 @@ def test_cli_run_server_and_run_mcp_dispatch():
         assert ret == 0
         mock_uvicorn.assert_called_once_with("main:app", host="0.0.0.0", port=9000, reload=False)
 
-    with patch("common_framework.mcp.server.create_mcp_server") as mock_create_mcp:
-        mock_server = MagicMock()
-        mock_create_mcp.return_value = mock_server
+        with patch("common_framework.mcp.server.create_mcp_server") as mock_create_mcp:
+            mock_server = MagicMock()
+            mock_create_mcp.return_value = mock_server
 
-        ret_mcp = cli_main(["run-mcp", "--name", "test-mcp", "--transport", "stdio"])
-        assert ret_mcp == 0
-        mock_server.run_stdio.assert_called_once()
+            ret_mcp = cli_main(["run-mcp", "--name", "test-mcp", "--transport", "stdio"])
+            assert ret_mcp == 0
+            mock_server.run_stdio.assert_called_once()
 
-        # SSE transport dispatch
-        ret_sse = cli_main(["run-mcp", "--name", "test-mcp", "--transport", "sse", "--port", "8080"])
-        assert ret_sse == 0
-        mock_server.run_sse.assert_called_once_with(host="127.0.0.1", port=8080)
+            # SSE transport dispatch
+            ret_sse = cli_main(["run-mcp", "--name", "test-mcp", "--transport", "sse", "--port", "8080"])
+            assert ret_sse == 0
+            mock_server.create_sse_app.assert_called_once()
 
 
 def test_repl_edge_cases_and_llm_prompts():
@@ -289,15 +289,14 @@ def test_cli_dispatch_subcommands(tmp_path):
     with patch("common_framework.cli.doctor.run_doctor") as mock_doc:
         mock_doc.return_value.format_json.return_value = '{"status": "ok"}'
         mock_doc.return_value.healthy = True
-        assert cli_main(["doctor", "--format", "json"]) == 0
+        assert cli_main(["doctor", "--json"]) == 0
 
     # 2. Init scaffolding
-    dest = tmp_path / "my_microservice"
-    assert cli_main(["init", str(dest)]) == 0
-    assert (dest / "main.py").exists()
+    assert cli_main(["init", "my_microservice", "--dir", str(tmp_path)]) == 0
+    assert (tmp_path / "main.py").exists()
 
     # 3. REPL command invocation
-    with patch("common_framework.cli.repl.CLIPlaygroundREPL.run") as mock_run:
+    with patch("common_framework.cli.main.handle_repl", return_value=0) as mock_run:
         assert cli_main(["repl"]) == 0
         mock_run.assert_called_once()
 

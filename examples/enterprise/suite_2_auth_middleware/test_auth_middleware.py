@@ -1,8 +1,8 @@
-"""Suite 2: Seguridad y Autenticación (Middleware Tests).
+"""Suite 2: Security and Authentication (Middleware Tests).
 
-Valida que la capa de red rechaza peticiones no autorizadas con HTTP 401 antes
-de que toquen la lógica de negocio del servidor MCP, y que normaliza adecuadamente
-múltiples transportes de credenciales (Bearer, X-API-Key y Query Parameter).
+Validates that the network layer rejects unauthorized requests with HTTP 401 before
+reaching MCP server business logic, and transparently normalizes multiple credential
+transports (Bearer, X-API-Key, and Query Parameter).
 """
 
 from __future__ import annotations
@@ -20,15 +20,11 @@ PROTECTED_MESSAGES_ENDPOINT = "/api/v1/mcp/messages/"
 
 
 class TestMCPAuthMiddlewareRejection:
-    """Pruebas de rechazo en capa de transporte cuando faltan o son inválidas las credenciales."""
+    """Tests transport-layer rejection when credentials are missing or invalid."""
 
     def test_unauthorized_rejection_missing_credentials_401(self) -> None:
-        """Objetivo: Enviar petición HTTP al endpoint protegido (/api/v1/mcp/sse) sin cabecera
-
-        Authorization ni parámetro ?api_key=. Afirmar que MCPAuthMiddleware bloquea la petición
-        devolviendo HTTP 401 y que la lógica del servidor MCP nunca es invocada.
-        """
-        # Crear spy/tracker en el servidor MCP para certificar que su lógica interna nunca se ejecuta
+        """Verify request to protected endpoint without credentials returns HTTP 401 and prevents execution."""
+        # Create spy/tracker on the MCP server to verify internal logic is never executed
         mock_server = create_mcp_server(name="secure-isolated-mcp")
         executed_tracker: list[str] = []
 
@@ -44,43 +40,43 @@ class TestMCPAuthMiddlewareRejection:
         )
 
         with TestClient(app) as client:
-            # Petición a /api/v1/mcp/sse sin credenciales
+            # Request to /api/v1/mcp/sse without credentials
             response = client.get(PROTECTED_SSE_ENDPOINT)
 
-            # 1. Validar código de estado 401 Unauthorized
+            # 1. Validate 401 Unauthorized status code
             assert response.status_code == 401, (
-                f"Fallo de seguridad: Endpoint protegido devolvió {response.status_code} "
-                "en lugar de 401 Unauthorized."
+                f"Security failure: Protected endpoint returned {response.status_code} "
+                "instead of 401 Unauthorized."
             )
 
-            # 2. Validar cabecera WWW-Authenticate según estándar RFC 6750 / MCP
+            # 2. Validate WWW-Authenticate header per RFC 6750 / MCP standard
             assert response.headers.get("www-authenticate") == 'Bearer realm="MCP"', (
-                "Cabecera WWW-Authenticate faltante o no conforme con el estándar MCP."
+                "WWW-Authenticate header missing or non-compliant with MCP standard."
             )
 
-            # 3. Validar payload JSON estandarizado
+            # 3. Validate standardized error JSON payload
             body = response.json()
             assert body.get("error") == "unauthorized"
             assert "Invalid or missing MCP authentication credential" in body.get("message", "")
 
-            # 4. Aislamiento estricto: la lógica interna del MCP NUNCA fue invocada
+            # 4. Strict isolation: MCP internal logic was NEVER invoked
             assert len(executed_tracker) == 0, (
-                "Vulnerabilidad detectada: La herramienta interna del MCP fue invocada a pesar del 401."
+                "Vulnerability detected: Internal MCP tool was invoked despite 401 rejection."
             )
 
     def test_unauthorized_rejection_invalid_bearer_token_401(self) -> None:
-        """Verifica que un token Bearer alterado o no coincidente es rechazado con 401."""
+        """Verify altered or non-matching Bearer token is rejected with 401."""
         app = create_secure_mcp_gateway(api_key=SECRET_TOKEN)
         with TestClient(app) as client:
             response = client.get(
                 PROTECTED_SSE_ENDPOINT,
-                headers={"Authorization": "Bearer token-falso-o-expirado"},
+                headers={"Authorization": "Bearer fake-or-expired-token"},
             )
             assert response.status_code == 401
             assert response.json()["error"] == "unauthorized"
 
     def test_unauthorized_rejection_invalid_x_api_key_401(self) -> None:
-        """Verifica que una clave en X-API-Key inválida es rechazada con 401."""
+        """Verify invalid X-API-Key header value is rejected with 401."""
         app = create_secure_mcp_gateway(api_key=SECRET_TOKEN)
         with TestClient(app) as client:
             response = client.get(
@@ -92,34 +88,28 @@ class TestMCPAuthMiddlewareRejection:
 
 
 class TestMCPAuthMiddlewareMultiTransport:
-    """Pruebas de normalización exitosa de autenticación con múltiples transportes."""
+    """Tests successful authentication normalization across multiple transports."""
 
     def test_successful_authentication_bearer_header(self) -> None:
-        """Objetivo: Validar que una petición con header 'Authorization: Bearer <token>' pasa
-
-        el middleware de autenticación y alcanza el router del protocolo MCP.
-        """
+        """Verify request with 'Authorization: Bearer <token>' passes middleware and reaches MCP router."""
         app = create_secure_mcp_gateway(api_key=SECRET_TOKEN)
         with TestClient(app) as client:
-            # Enviamos POST a messages (endpoint del protocolo MCP) con credencial válida
+            # Send POST to messages endpoint with valid credential
             response = client.post(
                 PROTECTED_MESSAGES_ENDPOINT,
                 json={},
                 headers={"Authorization": f"Bearer {SECRET_TOKEN}"},
             )
 
-            # Si pasa la autenticación, la petición entra al handler del MCP.
-            # El handler de SSE espera session_id y responde 400 Bad Request (NO 401 Unauthorized),
-            # demostrando que superó la barrera de red perimetral.
-            assert response.status_code != 401, "El token Bearer válido fue rechazado indebidamente con 401."
+            # Passing authentication means request enters the MCP handler.
+            # The SSE handler expects session_id and responds with 400 Bad Request (NOT 401 Unauthorized),
+            # proving it cleared the perimeter network security barrier.
+            assert response.status_code != 401, "Valid Bearer token was improperly rejected with 401."
             assert response.status_code == 400
             assert "session_id is required" in response.text
 
     def test_successful_authentication_x_api_key_header(self) -> None:
-        """Objetivo: Validar que una petición con header 'X-API-Key: <token>' es admitida
-
-        normalizándose de forma transparente en el middleware.
-        """
+        """Verify request with 'X-API-Key: <token>' header is transparently admitted."""
         app = create_secure_mcp_gateway(api_key=SECRET_TOKEN)
         with TestClient(app) as client:
             response = client.post(
@@ -128,16 +118,13 @@ class TestMCPAuthMiddlewareMultiTransport:
                 headers={"X-API-Key": SECRET_TOKEN},
             )
 
-            assert response.status_code != 401, "El header X-API-Key válido fue rechazado con 401."
+            assert response.status_code != 401, "Valid X-API-Key header was rejected with 401."
             assert response.status_code == 400
             assert "session_id is required" in response.text
 
     def test_query_param_authentication_when_explicitly_enabled(self) -> None:
-        """Objetivo: Validar que el parámetro en URL ?api_key=<token> es aceptado únicamente
-
-        cuando se activa explícitamente allow_query_param_auth=True (para clientes EventSource de browser).
-        """
-        # 1. Con allow_query_param=True: pasa la autenticación
+        """Verify ?api_key=<token> URL parameter is accepted only when allow_query_param_auth=True."""
+        # 1. With allow_query_param=True: authentication succeeds
         app_opt_in = create_secure_mcp_gateway(
             api_key=SECRET_TOKEN,
             allow_query_param=True,
@@ -151,7 +138,7 @@ class TestMCPAuthMiddlewareMultiTransport:
             assert response.status_code == 400
             assert "session_id is required" in response.text
 
-        # 2. Con allow_query_param=False (default estricto): el query param es rechazado con 401
+        # 2. With allow_query_param=False (strict default): query param is rejected with 401
         app_strict = create_secure_mcp_gateway(
             api_key=SECRET_TOKEN,
             allow_query_param=False,

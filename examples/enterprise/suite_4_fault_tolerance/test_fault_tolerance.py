@@ -1,8 +1,8 @@
-"""Suite 4: Mapeo de Errores y Tolerancia a Fallos (Exception Translation).
+"""Suite 4: Error Mapping and Fault Tolerance (Exception Translation).
 
-Demuestra cómo el Gateway reacciona cuando los componentes internos fallan,
-traduciendo excepciones de Python en respuestas HTTP estandarizadas conforme a RFC
-(429 Too Many Requests con Retry-After, 502 Bad Gateway ante alucinaciones o fallos de upstream).
+Demonstrates how the Gateway handles internal component failures, translating Python
+exceptions into standardized HTTP responses per RFC standards (429 Too Many Requests with
+Retry-After, 502 Bad Gateway on upstream failures or malformed outputs).
 """
 
 from __future__ import annotations
@@ -25,16 +25,11 @@ from suite_4_fault_tolerance.gateway_resilience import (
 
 
 class TestExceptionTranslationHTTP:
-    """Valida la traducción de excepciones del dominio hacia códigos de estado y headers HTTP."""
+    """Validate domain exception translation into HTTP status codes and headers."""
 
     def test_rate_limit_error_translated_to_http_429_with_retry_after(self) -> None:
-        """Objetivo: Configurar el Mock del LLM para que lance deliberadamente un RateLimitError
-
-        (simulando cuota de API agotada o throttling por el proveedor). Validar mediante TestClient
-        que el Gateway intercepta la excepción y devuelve HTTP 429 con el header 'Retry-After'
-        y el cuerpo estructurado 'rate_limit_exceeded'.
-        """
-        # 1. Configurar mock de cliente LLM lanzando RateLimitError con retry_after explícito
+        """Verify RateLimitError translates to HTTP 429 with 'Retry-After' header and structured payload."""
+        # 1. Configure LLM client mock raising RateLimitError with explicit retry_after
         mock_client = AsyncMock(spec=BaseLLMClient)
         mock_client.complete = AsyncMock(
             side_effect=RateLimitError(
@@ -47,23 +42,23 @@ class TestExceptionTranslationHTTP:
         app = create_resilient_gateway(llm_client=mock_client)
 
         with TestClient(app) as client:
-            # 2. Consumir endpoint
+            # 2. Consume endpoint
             response = client.post(
                 "/api/v1/chat/completions",
-                json={"prompt": "¿Cuál es la vigencia de la patente X?", "model": "gpt-4o"},
+                json={"prompt": "What is the expiration date of patent X?", "model": "gpt-4o"},
             )
 
-            # 3. Validar HTTP 429 Too Many Requests
+            # 3. Validate HTTP 429 Too Many Requests
             assert response.status_code == 429, (
-                f"Fallo de traducción: Se esperaba HTTP 429, pero se obtuvo {response.status_code}."
+                f"Translation failure: Expected HTTP 429, got {response.status_code}."
             )
 
-            # 4. Validar header 'Retry-After' según RFC 6585 / HTTP Specs
+            # 4. Validate header 'Retry-After' per RFC 6585 / HTTP Specs
             assert response.headers.get("Retry-After") == "60", (
-                f"Falta el header Retry-After o su valor es incorrecto: {response.headers.get('Retry-After')}"
+                f"Missing or invalid Retry-After header: {response.headers.get('Retry-After')}"
             )
 
-            # 5. Validar cuerpo de error normalizado
+            # 5. Validate normalized error body
             body = response.json()
             assert body["error"] == "rate_limit_exceeded"
             assert "OpenAI organization quota exceeded" in body["message"]
@@ -71,11 +66,7 @@ class TestExceptionTranslationHTTP:
             assert body["retry_after"] == 60.0
 
     def test_structured_output_error_translated_to_http_502(self) -> None:
-        """Objetivo: Configurar el Mock del LLM para que lance deliberadamente un StructuredOutputError
-
-        (simulando que el LLM alucinó un formato inválido o devolvió un JSON corrompido que no coincide
-        con el esquema Pydantic). Validar que el Gateway devuelve HTTP 502 Bad Gateway sin tumbar el proceso.
-        """
+        """Verify StructuredOutputError translates to HTTP 502 Bad Gateway without crashing the server process."""
         corrupted_raw_output = '{"entity_name": "Acme Corp", "tax_id": null, "annual_revenue": "NaN"}'
         mock_client = AsyncMock(spec=BaseLLMClient)
         mock_client.structured_complete = AsyncMock(
@@ -90,22 +81,22 @@ class TestExceptionTranslationHTTP:
         with TestClient(app) as client:
             response = client.post(
                 "/api/v1/extract/structured",
-                json={"prompt": "Extrae los datos fiscales de la factura 9981.", "model": "claude-3-5-sonnet"},
+                json={"prompt": "Extract fiscal data from invoice 9981.", "model": "claude-3-5-sonnet"},
             )
 
-            # 1. Validar HTTP 502 Bad Gateway (upstream LLM generó payload defectuoso)
+            # 1. Validate HTTP 502 Bad Gateway (upstream LLM generated defective payload)
             assert response.status_code == 502, (
-                f"Fallo de traducción: Se esperaba HTTP 502 ante StructuredOutputError, se obtuvo {response.status_code}."
+                f"Translation failure: Expected HTTP 502 on StructuredOutputError, got {response.status_code}."
             )
 
-            # 2. Validar payload JSON informativo para depuración
+            # 2. Validate debugging payload
             body = response.json()
             assert body["error"] == "structured_output_validation_failed"
             assert "Failed to validate JSON response" in body["message"]
             assert body["raw_output"] == corrupted_raw_output
 
     def test_upstream_llm_provider_error_translated_to_http_502(self) -> None:
-        """Verifica que fallos de infraestructura del proveedor LLM (500 de OpenAI o Anthropic) se mapean a 502."""
+        """Verify upstream LLM provider infrastructure failure (500 from provider) maps to 502."""
         mock_client = AsyncMock(spec=BaseLLMClient)
         mock_client.complete = AsyncMock(
             side_effect=LLMProviderError(
@@ -128,7 +119,7 @@ class TestExceptionTranslationHTTP:
             assert body["provider"] == "anthropic"
 
     def test_provider_authentication_error_translated_to_http_401(self) -> None:
-        """Verifica que una clave de API inválida del proveedor LLM se traduce en 401 con header Bearer."""
+        """Verify invalid API key from upstream LLM provider translates to 401 with Bearer header."""
         mock_client = AsyncMock(spec=BaseLLMClient)
         mock_client.complete = AsyncMock(
             side_effect=AuthenticationError(

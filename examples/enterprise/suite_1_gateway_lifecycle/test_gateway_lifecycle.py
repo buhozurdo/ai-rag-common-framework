@@ -1,8 +1,7 @@
-"""Suite 1: Pruebas de Frontera y Ciclo de Vida (Gateway Tests).
+"""Suite 1: Gateway Boundary and Lifecycle Tests.
 
-Valida que el Gateway de la aplicación arranca correctamente, expone las sondas de vida
-necesarias para la orquestación en Kubernetes (/healthz, /readyz) y gestiona sus recursos
-de conexión y memoria de manera segura durante el ciclo de vida (lifespan).
+Validates application Gateway startup, Kubernetes orchestration health probes
+(/healthz, /readyz), and safe connection/memory resource cleanup across the lifespan.
 """
 
 from __future__ import annotations
@@ -20,13 +19,10 @@ from suite_1_gateway_lifecycle.gateway_app import (
 
 
 class TestGatewayHealthchecks:
-    """Valida la inyección de sondas de liveness y readiness para Kubernetes."""
+    """Validate Kubernetes liveness and readiness probe injection."""
 
     def test_healthchecks_liveness_readiness(self) -> None:
-        """Objetivo: Validar que la fábrica create_app inyectó correctamente las sondas de vida
-
-        esperando HTTP 200 y la estructura estándar de observabilidad.
-        """
+        """Verify create_app injects health probes returning HTTP 200 with standard observability payload."""
         app = create_app(
             title="K8s Gateway Test",
             version="1.0.0",
@@ -51,7 +47,7 @@ class TestGatewayHealthchecks:
             assert "default_model" in data_readyz
 
     def test_healthchecks_can_be_disabled(self) -> None:
-        """Verifica que el Gateway permite deshabilitar las rutas si se requiere un router externo."""
+        """Verify Gateway allows disabling healthcheck routes when external routing is required."""
         app = create_app(enable_healthcheck=False)
         with TestClient(app) as client:
             res_healthz = client.get("/healthz")
@@ -61,14 +57,10 @@ class TestGatewayHealthchecks:
 
 
 class TestGatewayLifespan:
-    """Valida la gestión de recursos de arranque (startup) y apagado limpio (shutdown)."""
+    """Validate resource startup and clean shutdown lifespan lifecycle."""
 
     def test_lifespan_resource_cleanup_prevents_leaks(self) -> None:
-        """Objetivo: Simular el ciclo completo de vida usando el contexto de TestClient,
-
-        asegurando con mocks que las conexiones de base de datos se inicializan al arrancar
-        y se cierran críticamente al apagar el servidor, evitando fugas de memoria y sockets.
-        """
+        """Simulate full lifecycle via TestClient context, verifying connections are cleaned up."""
         mock_db = MagicMock(spec=DatabaseConnectionPool)
         mock_db.connect = AsyncMock()
         mock_db.disconnect = AsyncMock()
@@ -77,30 +69,30 @@ class TestGatewayLifespan:
 
         app = create_lifecycle_gateway(db_pool=mock_db)
 
-        # Antes de iniciar la app, no se debe haber llamado a connect ni disconnect
+        # Before app startup, neither connect nor disconnect should be called
         assert mock_db.connect.call_count == 0
         assert mock_db.disconnect.call_count == 0
 
-        # Bloque de ciclo de vida con TestClient
+        # Lifespan block with TestClient
         with TestClient(app) as client:
-            # Al entrar, startup debió ser invocado
+            # Upon entering, startup must be invoked
             assert mock_db.connect.call_count == 1
             assert mock_db.disconnect.call_count == 0
 
-            # Consumir un endpoint dentro del ciclo activo
+            # Consume an endpoint during active lifecycle
             res = client.get("/api/v1/system/status")
             assert res.status_code == 200
             assert res.json()["status"] == "operational"
 
-        # Al salir del bloque with, shutdown debió ser ejecutado inmediatamente
+        # Upon exiting with block, shutdown must execute immediately
         assert mock_db.connect.call_count == 1
         assert mock_db.disconnect.call_count == 1, (
-            "CRÍTICO: El pool de conexiones de BD no fue cerrado al apagar el Gateway. "
-            "Esto provoca fugas de sockets y memoria en pods de Kubernetes."
+            "CRITICAL: Database connection pool was not closed when Gateway shut down. "
+            "This leaks sockets and memory in Kubernetes pods."
         )
 
     def test_lifespan_state_isolation_between_runs(self) -> None:
-        """Verifica que múltiples ejecuciones del servidor crean ciclos de vida independientes y seguros."""
+        """Verify multiple server runs create isolated, safe lifespans."""
         pool_1 = DatabaseConnectionPool()
         app_1 = create_lifecycle_gateway(db_pool=pool_1)
         with TestClient(app_1):

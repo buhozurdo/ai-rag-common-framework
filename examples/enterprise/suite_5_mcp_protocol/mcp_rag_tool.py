@@ -32,7 +32,7 @@ def build_legal_mcp_server(rag_engine: Optional[RAGEngine] = None) -> FrameworkM
 
     @server.tool(
         name="search_legal_corpus",
-        description="Busca precedentes, jurisprudencia y artículos dentro del corpus legal indexado.",
+        description="Search precedents, jurisprudence, and statutory articles within the indexed legal corpus.",
     )
     async def search_legal_corpus(
         query: str,
@@ -45,14 +45,14 @@ def build_legal_mcp_server(rag_engine: Optional[RAGEngine] = None) -> FrameworkM
         results = await engine.retrieve(query=query, top_k=top_k, filter_metadata=filter_meta)
 
         if not results:
-            return "No se encontraron precedentes legales relevantes para la consulta especificada."
+            return "No relevant legal precedents found for the specified query."
 
         formatted_citations = []
         for r in results:
             doc_id = r.document.id
             score = r.score
             content = r.document.content.strip()
-            formatted_citations.append(f"[{doc_id}] (Relevancia: {score:.2f})\n{content}")
+            formatted_citations.append(f"[{doc_id}] (Relevance: {score:.2f})\n{content}")
 
         return "\n\n---\n\n".join(formatted_citations)
 
@@ -78,7 +78,7 @@ async def dispatch_jsonrpc_tool_call(
     tool_name = params.get("name")
     tool_args = params.get("arguments", {})
 
-    # Invocación directa a través de MCPServer
+    # Direct invocation through MCPServer
     result = await server.underlying_server.call_tool(tool_name, tool_args)
 
     content_list = []
