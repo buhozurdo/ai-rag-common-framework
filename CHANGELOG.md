@@ -4,6 +4,36 @@ All notable changes to this project are documented in this file following [Keep 
 
 ---
 
+## [v0.18.0] - 2026-11-14
+
+### Pull Request
+- **PR Title:** `release: v0.18.0 - Ephemeral Code Interpreter & Tool Sandboxing (FEAT-21)`
+- **PR Description:**
+  > ### Summary
+  > Releases `v0.18.0` introducing `FEAT-21: Ephemeral Code Interpreter & Tool Sandboxing` under `EPIC-10`.
+  > Provides a secure, zero-external-dependency Python execution sandbox (`CodeInterpreter`) running code in isolated subprocesses with ephemeral scratch directories, strict execution timeouts, output length truncation, automated secret/environment variable scrubbing, and native framework Tool integration.
+  >
+  > ### Key Changes
+  > - **Sandboxed Code Interpreter:** Implemented `CodeInterpreter` and `ExecutionResult` in `src/common_framework/tools/interpreter.py`.
+  > - **Security & Secret Scrubbing:** Enforced automated environment variable scrubbing to strip API keys, secrets, tokens, and passwords from child processes.
+  > - **Resource Safety:** Configurable execution timeout (`asyncio.wait_for` + process kill) and stdout/stderr output truncation.
+  > - **Framework Tool Integration:** Added `.as_tool()` method and pre-instantiated `code_interpreter_tool` compatible with `ReActAgent` and `AgentSupervisor`.
+  > - **Public API Exports:** Exposed interpreter components in `src/common_framework/tools/__init__.py` and root `src/common_framework/__init__.py`.
+  > - **Test Suite:** Added 12 unit tests in `tests/test_code_interpreter.py`. Total test suite: 322 tests passing 100% with 91% global coverage (`interpreter.py` at 94%).
+  >
+  > ### Verification
+  > - `pytest tests/ examples/ --cov=common_framework`: 322/322 passed, 91% coverage.
+  > - Zero regressions or breaking changes to existing APIs.
+
+### Added
+- **Ephemeral Code Interpreter (`tools/interpreter.py` - FEAT-21):** Implemented `CodeInterpreter` executing Python code in isolated subprocesses with ephemeral temporary directories.
+- **Environment & Secret Scrubbing:** Automated stripping of sensitive environment variables (`*KEY*`, `*SECRET*`, `*TOKEN*`, `*PASSWORD*`, `*AUTH*`, `*CREDENTIAL*`) with custom environment overrides.
+- **Timeout & Output Guards:** Process execution timeout enforcement with process termination and max-length output truncation.
+- **Framework Tool Interface:** Native `as_tool()` export providing `code_interpreter` tool ready for LLM function calling and agent usage.
+- **Dual Execution Modes:** Support for async execution (`await interpreter.run(code)`) and synchronous execution (`interpreter.run_sync(code)`) with thread pool offloading.
+
+---
+
 ## [v0.17.0] - 2026-11-13
 
 ### Pull Request
