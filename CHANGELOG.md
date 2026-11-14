@@ -4,6 +4,35 @@ All notable changes to this project are documented in this file following [Keep 
 
 ---
 
+## [v0.17.0] - 2026-11-13
+
+### Pull Request
+- **PR Title:** `release: v0.17.0 - Stateful Directed Graph Workflow Engine (FEAT-20)`
+- **PR Description:**
+  > ### Summary
+  > Releases `v0.17.0` introducing `FEAT-20: Stateful Directed Graph Workflow Engine` under `EPIC-10`.
+  > Delivers a lightweight, zero-bloat state graph orchestrator (`StateGraph`) supporting multi-step acyclic and cyclic workflow topologies with conditional branching, execution step history, max-step guards, state checkpointing callbacks, and dual async/sync execution support.
+  >
+  > ### Key Changes
+  > - **StateGraph Engine:** Implemented `StateGraph`, `WorkflowResult`, `WorkflowStep`, and `START`/`END` sentinels in `src/common_framework/agents/workflow.py`.
+  > - **Dynamic Branching & Routing:** Added `add_node`, `add_edge`, `set_entry_point`, and `add_conditional_edges` with optional `path_map`.
+  > - **Checkpointing & Guards:** Integrated step-by-step state snapshot tracking, configurable `checkpoint_callback`, and runaway loop detection via `max_steps`.
+  > - **Public API Exports:** Exposed workflow components in `src/common_framework/agents/__init__.py` and root `src/common_framework/__init__.py`.
+  > - **Test Suite:** Added 11 tests in `tests/test_workflow.py`. Total suite: 310 tests passing 100% with 91% global coverage (workflow engine at 98%).
+  >
+  > ### Verification
+  > - `pytest tests/ examples/ --cov=common_framework`: 310/310 passed, 91% coverage.
+  > - Zero regressions or breaking changes to existing APIs.
+
+### Added
+- **Stateful Directed Graph Workflow Engine (`agents/workflow.py` - FEAT-20):** Implemented `StateGraph` coordinating multi-step cyclic and acyclic agent workflows with state mutation tracking and sentinel-based (`START`, `END`) lifecycle controls.
+- **Dynamic Routing & Path Mapping:** Added conditional branching via router callables and dictionary-based target mappings (`add_conditional_edges`).
+- **Graph Validation & Integrity:** Built-in validation ensuring entry point presence, valid node targets, and prevention of reserved name collisions.
+- **Audit & Checkpointing Hooks:** Added `WorkflowStep` timing records, step state snapshots, and `checkpoint_callback` invocation.
+- **Dual Execution Modes:** Support for async coroutines (`await graph.run()`) and synchronous thread pool offloaded execution (`graph.run_sync()`).
+
+---
+
 ## [v0.16.0] - 2026-11-13
 
 ### Pull Request
