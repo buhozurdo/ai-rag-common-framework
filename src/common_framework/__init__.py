@@ -153,6 +153,12 @@ from common_framework.rag.vectorstore import (
 )
 from common_framework.rag.storage.sqlite import SQLiteVectorStore
 from common_framework.tools.base import Tool, ToolExecutionError, tool
+from common_framework.tools.interpreter import (
+    CodeInterpreter,
+    ExecutionResult,
+    code_interpreter_tool,
+    default_code_interpreter,
+)
 from common_framework.tools.registry import (
     ToolNotFoundError,
     ToolRegistry,
@@ -199,6 +205,10 @@ __all__ = [
     "Tool",
     "ToolExecutionError",
     "tool",
+    "CodeInterpreter",
+    "ExecutionResult",
+    "code_interpreter_tool",
+    "default_code_interpreter",
     "ToolRegistry",
     "ToolNotFoundError",
     "global_tool_registry",
