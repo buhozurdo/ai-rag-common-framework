@@ -7,26 +7,26 @@ All notable changes to this project are documented in this file following [Keep 
 ## [v0.18.0] - 2026-11-14
 
 ### Pull Request
-- **PR Title:** `release: v0.18.0 - Ephemeral Code Interpreter & Tool Sandboxing (FEAT-21)`
+- **PR Title:** `release: v0.18.0 - Ephemeral Code Interpreter & Tool Sandboxing`
 - **PR Description:**
   > ### Summary
-  > Releases `v0.18.0` introducing `FEAT-21: Ephemeral Code Interpreter & Tool Sandboxing` under `EPIC-10`.
-  > Provides a secure, zero-external-dependency Python execution sandbox (`CodeInterpreter`) running code in isolated subprocesses with ephemeral scratch directories, strict execution timeouts, output length truncation, automated secret/environment variable scrubbing, and native framework Tool integration.
-  >
-  > ### Key Changes
-  > - **Sandboxed Code Interpreter:** Implemented `CodeInterpreter` and `ExecutionResult` in `src/common_framework/tools/interpreter.py`.
-  > - **Security & Secret Scrubbing:** Enforced automated environment variable scrubbing to strip API keys, secrets, tokens, and passwords from child processes.
-  > - **Resource Safety:** Configurable execution timeout (`asyncio.wait_for` + process kill) and stdout/stderr output truncation.
-  > - **Framework Tool Integration:** Added `.as_tool()` method and pre-instantiated `code_interpreter_tool` compatible with `ReActAgent` and `AgentSupervisor`.
-  > - **Public API Exports:** Exposed interpreter components in `src/common_framework/tools/__init__.py` and root `src/common_framework/__init__.py`.
-  > - **Test Suite:** Added 12 unit tests in `tests/test_code_interpreter.py`. Total test suite: 322 tests passing 100% with 91% global coverage (`interpreter.py` at 94%).
-  >
-  > ### Verification
-  > - `pytest tests/ examples/ --cov=common_framework`: 322/322 passed, 91% coverage.
-  > - Zero regressions or breaking changes to existing APIs.
+  > Releases `v0.18.0` introducing the Ephemeral Code Interpreter & Tool Sandboxing.
+ > Provides a secure, zero-external-dependency Python execution sandbox (`CodeInterpreter`) running code in isolated subprocesses with ephemeral scratch directories, strict execution timeouts, output length truncation, automated secret/environment variable scrubbing, and native framework Tool integration.
+ >
+ > ### Key Changes
+ > - **Sandboxed Code Interpreter:** Implemented `CodeInterpreter` and `ExecutionResult` in `src/common_framework/tools/interpreter.py`.
+ > - **Security & Secret Scrubbing:** Enforced automated environment variable scrubbing to strip API keys, secrets, tokens, and passwords from child processes.
+ > - **Resource Safety:** Configurable execution timeout (`asyncio.wait_for` + process kill) and stdout/stderr output truncation.
+ > - **Framework Tool Integration:** Added `.as_tool()` method and pre-instantiated `code_interpreter_tool` compatible with `ReActAgent` and `AgentSupervisor`.
+ > - **Public API Exports:** Exposed interpreter components in `src/common_framework/tools/__init__.py` and root `src/common_framework/__init__.py`.
+ > - **Test Suite:** Added 12 unit tests in `tests/test_code_interpreter.py`. Total test suite: 322 tests passing 100% with 91% global coverage (`interpreter.py` at 94%).
+ >
+ > ### Verification
+ > - `pytest tests/ examples/ --cov=common_framework`: 322/322 passed, 91% coverage.
+ > - Zero regressions or breaking changes to existing APIs.
 
 ### Added
-- **Ephemeral Code Interpreter (`tools/interpreter.py` - FEAT-21):** Implemented `CodeInterpreter` executing Python code in isolated subprocesses with ephemeral temporary directories.
+- **Ephemeral Code Interpreter (`tools/interpreter.py`):** Implemented `CodeInterpreter` executing Python code in isolated subprocesses with ephemeral temporary directories.
 - **Environment & Secret Scrubbing:** Automated stripping of sensitive environment variables (`*KEY*`, `*SECRET*`, `*TOKEN*`, `*PASSWORD*`, `*AUTH*`, `*CREDENTIAL*`) with custom environment overrides.
 - **Timeout & Output Guards:** Process execution timeout enforcement with process termination and max-length output truncation.
 - **Framework Tool Interface:** Native `as_tool()` export providing `code_interpreter` tool ready for LLM function calling and agent usage.
@@ -37,25 +37,25 @@ All notable changes to this project are documented in this file following [Keep 
 ## [v0.17.0] - 2026-11-13
 
 ### Pull Request
-- **PR Title:** `release: v0.17.0 - Stateful Directed Graph Workflow Engine (FEAT-20)`
+- **PR Title:** `release: v0.17.0 - Stateful Directed Graph Workflow Engine`
 - **PR Description:**
   > ### Summary
-  > Releases `v0.17.0` introducing `FEAT-20: Stateful Directed Graph Workflow Engine` under `EPIC-10`.
-  > Delivers a lightweight, zero-bloat state graph orchestrator (`StateGraph`) supporting multi-step acyclic and cyclic workflow topologies with conditional branching, execution step history, max-step guards, state checkpointing callbacks, and dual async/sync execution support.
-  >
-  > ### Key Changes
-  > - **StateGraph Engine:** Implemented `StateGraph`, `WorkflowResult`, `WorkflowStep`, and `START`/`END` sentinels in `src/common_framework/agents/workflow.py`.
-  > - **Dynamic Branching & Routing:** Added `add_node`, `add_edge`, `set_entry_point`, and `add_conditional_edges` with optional `path_map`.
-  > - **Checkpointing & Guards:** Integrated step-by-step state snapshot tracking, configurable `checkpoint_callback`, and runaway loop detection via `max_steps`.
-  > - **Public API Exports:** Exposed workflow components in `src/common_framework/agents/__init__.py` and root `src/common_framework/__init__.py`.
-  > - **Test Suite:** Added 11 tests in `tests/test_workflow.py`. Total suite: 310 tests passing 100% with 91% global coverage (workflow engine at 98%).
-  >
-  > ### Verification
-  > - `pytest tests/ examples/ --cov=common_framework`: 310/310 passed, 91% coverage.
-  > - Zero regressions or breaking changes to existing APIs.
+  > Releases `v0.17.0` introducing the Stateful Directed Graph Workflow Engine.
+ > Delivers a lightweight, zero-bloat state graph orchestrator (`StateGraph`) supporting multi-step acyclic and cyclic workflow topologies with conditional branching, execution step history, max-step guards, state checkpointing callbacks, and dual async/sync execution support.
+ >
+ > ### Key Changes
+ > - **StateGraph Engine:** Implemented `StateGraph`, `WorkflowResult`, `WorkflowStep`, and `START`/`END` sentinels in `src/common_framework/agents/workflow.py`.
+ > - **Dynamic Branching & Routing:** Added `add_node`, `add_edge`, `set_entry_point`, and `add_conditional_edges` with optional `path_map`.
+ > - **Checkpointing & Guards:** Integrated step-by-step state snapshot tracking, configurable `checkpoint_callback`, and runaway loop detection via `max_steps`.
+ > - **Public API Exports:** Exposed workflow components in `src/common_framework/agents/__init__.py` and root `src/common_framework/__init__.py`.
+ > - **Test Suite:** Added 11 tests in `tests/test_workflow.py`. Total suite: 310 tests passing 100% with 91% global coverage (workflow engine at 98%).
+ >
+ > ### Verification
+ > - `pytest tests/ examples/ --cov=common_framework`: 310/310 passed, 91% coverage.
+ > - Zero regressions or breaking changes to existing APIs.
 
 ### Added
-- **Stateful Directed Graph Workflow Engine (`agents/workflow.py` - FEAT-20):** Implemented `StateGraph` coordinating multi-step cyclic and acyclic agent workflows with state mutation tracking and sentinel-based (`START`, `END`) lifecycle controls.
+- **Stateful Directed Graph Workflow Engine (`agents/workflow.py`):** Implemented `StateGraph` coordinating multi-step cyclic and acyclic agent workflows with state mutation tracking and sentinel-based (`START`, `END`) lifecycle controls.
 - **Dynamic Routing & Path Mapping:** Added conditional branching via router callables and dictionary-based target mappings (`add_conditional_edges`).
 - **Graph Validation & Integrity:** Built-in validation ensuring entry point presence, valid node targets, and prevention of reserved name collisions.
 - **Audit & Checkpointing Hooks:** Added `WorkflowStep` timing records, step state snapshots, and `checkpoint_callback` invocation.
@@ -66,24 +66,24 @@ All notable changes to this project are documented in this file following [Keep 
 ## [v0.16.0] - 2026-11-13
 
 ### Pull Request
-- **PR Title:** `release: v0.16.0 - Multi-Agent Supervisor & Delegation Pattern (FEAT-19)`
+- **PR Title:** `release: v0.16.0 - Multi-Agent Supervisor & Delegation Pattern`
 - **PR Description:**
   > ### Summary
-  > Releases `v0.16.0` introducing `FEAT-19: Multi-Agent Supervisor & Delegation Pattern` under `EPIC-10`.
-  > Establishes an Orchestrator-Workers hierarchy where an autonomous `AgentSupervisor` coordinates specialized agents (`ReActAgent`, coroutines, sync callables) via a text-based protocol, shared `AgentBus` state bus, and dual async/sync execution support.
-  >
-  > ### Key Changes
-  > - **Supervisor & State Bus:** Implemented `AgentSupervisor`, `AgentBus`, `DelegationStep`, and `SupervisorResponse` in `src/common_framework/agents/supervisor.py`.
-  > - **Public API Exports:** Exposed supervisor components in `src/common_framework/agents/__init__.py` and root `src/common_framework/__init__.py`.
-  > - **Test Suite:** Added 10 tests in `tests/test_supervisor.py`. Total suite: 299 tests passing 100% with 90% global coverage.
-  > - **Codebase Hygiene:** Standardized 100% of docstrings, comments, and tests across all enterprise suites and modules to English.
-  >
-  > ### Verification
-  > - `pytest tests/ examples/ --cov=common_framework`: 299/299 passed, 90% coverage.
-  > - Zero regressions or breaking changes to existing modules.
+  > Releases `v0.16.0` introducing the Multi-Agent Supervisor & Delegation Pattern.
+ > Establishes an Orchestrator-Workers hierarchy where an autonomous `AgentSupervisor` coordinates specialized agents (`ReActAgent`, coroutines, sync callables) via a text-based protocol, shared `AgentBus` state bus, and dual async/sync execution support.
+ >
+ > ### Key Changes
+ > - **Supervisor & State Bus:** Implemented `AgentSupervisor`, `AgentBus`, `DelegationStep`, and `SupervisorResponse` in `src/common_framework/agents/supervisor.py`.
+ > - **Public API Exports:** Exposed supervisor components in `src/common_framework/agents/__init__.py` and root `src/common_framework/__init__.py`.
+ > - **Test Suite:** Added 10 tests in `tests/test_supervisor.py`. Total suite: 299 tests passing 100% with 90% global coverage.
+ > - **Codebase Hygiene:** Standardized 100% of docstrings, comments, and tests across all enterprise suites and modules to English.
+ >
+ > ### Verification
+ > - `pytest tests/ examples/ --cov=common_framework`: 299/299 passed, 90% coverage.
+ > - Zero regressions or breaking changes to existing modules.
 
 ### Added
-- **Multi-Agent Supervisor & Delegation Pattern (`agents/supervisor.py` - FEAT-19):** Implemented `AgentSupervisor` orchestrating specialized worker agents (including `ReActAgent`, async coroutines, and sync callables) via autonomous multi-turn delegation and centralized final synthesis.
+- **Multi-Agent Supervisor & Delegation Pattern (`agents/supervisor.py`):** Implemented `AgentSupervisor` orchestrating specialized worker agents (including `ReActAgent`, async coroutines, and sync callables) via autonomous multi-turn delegation and centralized final synthesis.
 - **Shared State Bus (`agents/supervisor.py`):** Added `AgentBus` providing coordinated shared memory across workers and supervisor during multi-agent task execution.
 - **Structured Delegation History:** Added `DelegationStep` and `SupervisorResponse` tracking step-by-step agent assignments, worker outputs, and bus snapshots.
 - **Synchronous Execution Convenience:** Added `AgentSupervisor.run_sync()` supporting both background thread execution within existing event loops and standalone synchronous calls.
@@ -94,7 +94,7 @@ All notable changes to this project are documented in this file following [Keep 
 ## [v0.15.0] - 2026-11-10
 
 ### Added
-- **Embedded SQLite Vector Store (`rag/storage/sqlite.py` - FEAT-18):** Implemented `SQLiteVectorStore` providing ACID-compliant, single-file vector persistence powered by standard library `sqlite3` without external daemons or heavy C++ bindings.
+- **Embedded SQLite Vector Store (`rag/storage/sqlite.py`):** Implemented `SQLiteVectorStore` providing ACID-compliant, single-file vector persistence powered by standard library `sqlite3` without external daemons or heavy C++ bindings.
 - **SQLite FTS5 Full-Text Search & BM25 Scoring:** Integrated native SQLite `fts5` virtual table indexing document contents, computing BM25 matching ranks with token sanitization and Unicode normalization.
 - **Vector BLOB Serialization & Fast Cosine Search:** Efficient binary serialization of float vectors as IEEE 754 32-bit floats (`struct.pack`/`unpack`) with opportunistic NumPy BLAS GEMV matrix multiplication acceleration and pure-Python dot-product fallback.
 - **RRF Hybrid Retrieval (`rag/storage/sqlite.py`):** Implemented native hybrid search fusing SQLite FTS5 BM25 keyword rankings with vector cosine similarity via Reciprocal Rank Fusion (RRF).
@@ -105,8 +105,8 @@ All notable changes to this project are documented in this file following [Keep 
 ## [v0.14.0] - 2026-11-10
 
 ### Added
-- **Multi-Query Retrieval Strategy (`rag/strategies.py` - FEAT-17):** Implemented `MultiQueryStrategy` generating parallel query variations via LLM prompt expansion to overcome distance-metric and lexical vocabulary limitations, executing concurrent vector/hybrid searches and fusing ranked candidates.
-- **Hypothetical Document Embeddings (`rag/strategies.py` - FEAT-17):** Implemented `HyDEStrategy` synthesizing hypothetical answer passages via LLM to project queries into document vector distribution space, with configurable hybrid weighting between hypothetical and original query representations.
+- **Multi-Query Retrieval Strategy (`rag/strategies.py`):** Implemented `MultiQueryStrategy` generating parallel query variations via LLM prompt expansion to overcome distance-metric and lexical vocabulary limitations, executing concurrent vector/hybrid searches and fusing ranked candidates.
+- **Hypothetical Document Embeddings (`rag/strategies.py`):** Implemented `HyDEStrategy` synthesizing hypothetical answer passages via LLM to project queries into document vector distribution space, with configurable hybrid weighting between hypothetical and original query representations.
 - **Generalized Multi-List Reciprocal Rank Fusion (`rag/strategies.py`):** Added `multi_list_rrf()` supporting arbitrary number of ranked candidate lists with configurable smoothing parameter $k$ and list weights.
 - **RRF Tie-Breaker Enhancement (`rag/bm25.py` & `rag/strategies.py`):** Added weighted raw score tracking in `reciprocal_rank_fusion` and `multi_list_rrf` to break rank ties deterministically using model confidence rather than insertion order.
 - **RAGEngine Strategy Integration (`rag/engine.py`):** Added native `retrieval_strategy` parameter to `RAGEngine.__init__`, `retrieve`, `query`, and `query_stream` with strategy override and recursion guards.
@@ -116,9 +116,9 @@ All notable changes to this project are documented in this file following [Keep 
 ## [v0.13.0] - 2026-11-09
 
 ### Added
-- **Unified Framework CLI (`cli/main.py` - FEAT-11):** Implemented zero-dependency `ai-rag` and `rag-mcp` console commands providing project bootstrapping (`init`), standalone MCP server running (`run-mcp`), FastAPI service running (`run-server`), runtime version inspection (`version`), and interactive REPL launching (`repl`).
-- **Configuration Doctor & Environment Diagnostics (`cli/doctor.py` - TASK-19):** Added `ai-rag doctor` running in-depth checks for Python version, configuration schema validation, API key detection (Gemini, OpenAI, Anthropic, Cohere), local Ollama reachability, directory write access, and optional dependencies with structured JSON and formatted text outputs.
-- **Interactive Terminal REPL & Tool Playground (`cli/repl.py` - FEAT-12):** Added `CLIPlaygroundREPL` supporting live tool inspection and invocation (`/tools`, `/call`), interactive RAG querying and document ingestion (`/query`, `/ingest`), diagnostics execution (`/doctor`), status inspection (`/status`), and LLM prompting.
+- **Unified Framework CLI (`cli/main.py`):** Implemented zero-dependency `ai-rag` and `rag-mcp` console commands providing project bootstrapping (`init`), standalone MCP server running (`run-mcp`), FastAPI service running (`run-server`), runtime version inspection (`version`), and interactive REPL launching (`repl`).
+- **Configuration Doctor & Environment Diagnostics (`cli/doctor.py`):** Added `ai-rag doctor` running in-depth checks for Python version, configuration schema validation, API key detection (Gemini, OpenAI, Anthropic, Cohere), local Ollama reachability, directory write access, and optional dependencies with structured JSON and formatted text outputs.
+- **Interactive Terminal REPL & Tool Playground (`cli/repl.py`):** Added `CLIPlaygroundREPL` supporting live tool inspection and invocation (`/tools`, `/call`), interactive RAG querying and document ingestion (`/query`, `/ingest`), diagnostics execution (`/doctor`), status inspection (`/status`), and LLM prompting.
 - **Microservice Scaffolding Generator (`cli/scaffold.py`):** Added starter project generator producing production-ready `main.py`, `.env.example`, and documentation.
 - **Synchronous Wrappers for RAGEngine & Tool:** Added `ingest_documents_sync`, `ingest_texts_sync`, `retrieve_sync`, `query_sync` on `RAGEngine`, and `execute_sync` on `Tool` class.
 
@@ -127,8 +127,8 @@ All notable changes to this project are documented in this file following [Keep 
 ## [v0.12.0] - 2026-11-09
 
 ### Added
-- **Lightweight RAG Triad Evaluation Suite (`eval/triad.py` - FEAT-09):** Implemented `RAGTriadEvaluator` evaluating the TruLens/RAG Triad metrics: Context Relevance, Groundedness (Faithfulness), and Answer Relevance, producing calibrated composite scores without external LLM evaluation dependencies.
-- **Hallucination Detection Heuristics & Grounding Scoring (`eval/hallucination.py` - TASK-18):** Implemented `HallucinationDetector` analyzing factual grounding with sentence-level claim extraction, content term filtering, and morphological suffix stemming (`_stem`), returning detailed `HallucinationReport` with attribution rates.
+- **Lightweight RAG Triad Evaluation Suite (`eval/triad.py`):** Implemented `RAGTriadEvaluator` evaluating the TruLens/RAG Triad metrics: Context Relevance, Groundedness (Faithfulness), and Answer Relevance, producing calibrated composite scores without external LLM evaluation dependencies.
+- **Hallucination Detection Heuristics & Grounding Scoring (`eval/hallucination.py`):** Implemented `HallucinationDetector` analyzing factual grounding with sentence-level claim extraction, content term filtering, and morphological suffix stemming (`_stem`), returning detailed `HallucinationReport` with attribution rates.
 - **Batch Evaluation & Metric Aggregation (`eval/triad.py`):** Added `evaluate_batch()` returning dataset pass rates, mean context relevance, mean groundedness, mean answer relevance, and composite distribution.
 
 ---
@@ -136,18 +136,18 @@ All notable changes to this project are documented in this file following [Keep 
 ## [v0.11.0] - 2026-11-09
 
 ### Added
-- **Token Usage & Cost Attribution Engine (`observability/cost.py` - FEAT-07):** Implemented `TokenCostTracker` with dynamic pricing tables per model/provider (OpenAI, Anthropic, Cohere, and custom), calculating real-time dollar costs and aggregated expenses by user, session, or model.
-- **Prometheus Metrics Exporter & /metrics Endpoint (`observability/metrics.py` - FEAT-08):** Implemented zero-dependency `PrometheusRegistry` tracking HTTP latencies, LLM requests, token counts, vector search latencies, and semantic cache hit rates, exposing standard Prometheus text exposition format via `create_metrics_router()`.
-- **Distributed Context Propagation & OpenTelemetry Tracing (`observability/tracing.py` - FEAT-08 / TASK-17):** Implemented `TraceContext` supporting W3C `traceparent` header injection/extraction and `trace_span` sync/async context managers for nested span tracking across coroutines.
+- **Token Usage & Cost Attribution Engine (`observability/cost.py`):** Implemented `TokenCostTracker` with dynamic pricing tables per model/provider (OpenAI, Anthropic, Cohere, and custom), calculating real-time dollar costs and aggregated expenses by user, session, or model.
+- **Prometheus Metrics Exporter & /metrics Endpoint (`observability/metrics.py`):** Implemented zero-dependency `PrometheusRegistry` tracking HTTP latencies, LLM requests, token counts, vector search latencies, and semantic cache hit rates, exposing standard Prometheus text exposition format via `create_metrics_router()`.
+- **Distributed Context Propagation & OpenTelemetry Tracing (`observability/tracing.py`):** Implemented `TraceContext` supporting W3C `traceparent` header injection/extraction and `trace_span` sync/async context managers for nested span tracking across coroutines.
 
 ---
 
 ## [v0.10.0] - 2026-11-09
 
 ### Added
-- **PII Sanitizer & Redaction Engine (`guardrails/sanitizer.py` - FEAT-10):** High-throughput scanning and redaction for emails, phone numbers, credit card numbers (with Luhn checksum validation), Social Security Numbers (SSN), IPv4 addresses, and API keys/tokens.
+- **PII Sanitizer & Redaction Engine (`guardrails/sanitizer.py`):** High-throughput scanning and redaction for emails, phone numbers, credit card numbers (with Luhn checksum validation), Social Security Numbers (SSN), IPv4 addresses, and API keys/tokens.
 - **Configurable Redaction Strategies (`guardrails/sanitizer.py`):** Added `RedactionStrategy` support for `REPLACE` (typed tag e.g. `[REDACTED_EMAIL]`), `MASK` (partial character retention e.g. `****-****-****-1234`), and `HASH` (SHA-256 digest pseudonyms).
-- **Prompt Injection & Jailbreak Moderation (`guardrails/moderation.py` - FEAT-10):** Implemented `PromptGuardrail` screening inputs and outputs for instruction override attacks, persona hijacking (DAN modes), delimiter breakouts (`</context>`, `</document>`), and system prompt exfiltration probes.
+- **Prompt Injection & Jailbreak Moderation (`guardrails/moderation.py`):** Implemented `PromptGuardrail` screening inputs and outputs for instruction override attacks, persona hijacking (DAN modes), delimiter breakouts (`</context>`, `</document>`), and system prompt exfiltration probes.
 - **Threat Level Scoring & Guardrail Violations (`guardrails/moderation.py`):** Output structured `GuardrailResult` with calibrated `risk_score` (0.0 to 1.0) and granular `GuardrailViolation` classification.
 
 ---
@@ -155,20 +155,20 @@ All notable changes to this project are documented in this file following [Keep 
 ## [v0.9.0] - 2026-11-08
 
 ### Added
-- **Autonomous ReAct Agent Loop Engine (`agents/react.py` - FEAT-04 / TASK-14):** Implemented `ReActAgent` orchestrating multi-step Thought-Action-Observation decision cycles with step streaming (`run_stream()`), execution traces (`AgentStep`), and iteration limits.
-- **Conversational Memory Buffers (`agents/memory.py` - FEAT-05 / TASK-15):** Implemented `ConversationBufferMemory` with sliding window message retention preserving system prompts, and `VectorMemory` for persistent RAG-powered associative memory retrieval.
-- **Human-in-the-Loop (HITL) Governance Hooks (`agents/hitl.py` - FEAT-06 / TASK-16):** Added `BaseApprovalHook`, `AutoApprovalHook`, `CallableApprovalHook`, and `QueueApprovalHook` supporting `APPROVED`, `REJECTED`, and `MODIFIED` decisions for sensitive operations.
-- **Tool-Level Approval Flag (`tools/base.py`):** Added `requires_approval: bool` to `Tool` class and `@tool(..., requires_approval=True)` decorator.
+- **Autonomous ReAct Agent Loop Engine (`agents/react.py`):** Implemented `ReActAgent` orchestrating multi-step Thought-Action-Observation decision cycles with step streaming (`run_stream()`), execution traces (`AgentStep`), and iteration limits.
+- **Conversational Memory Buffers (`agents/memory.py`):** Implemented `ConversationBufferMemory` with sliding window message retention preserving system prompts, and `VectorMemory` for persistent RAG-powered associative memory retrieval.
+- **Human-in-the-Loop (HITL) Governance Hooks (`agents/hitl.py`):** Added `BaseApprovalHook`, `AutoApprovalHook`, `CallableApprovalHook`, and `QueueApprovalHook` supporting `APPROVED`, `REJECTED`, and `MODIFIED` decisions for sensitive operations.
+- **Tool-Level Approval Flag (`tools/base.py`):** Added `requires_approval: bool` to `Tool` class and `@tool(., requires_approval=True)` decorator.
 
 ---
 
 ## [v0.8.0] - 2026-11-08
 
 ### Added
-- **Cross-Encoder Reranking Engine (`rag/rerankers.py` - FEAT-ADV-01):** Implemented `BaseReranker` abstract interface with async and sync (`rerank_sync`) evaluation pipelines.
+- **Cross-Encoder Reranking Engine (`rag/rerankers.py`):** Implemented `BaseReranker` abstract interface with async and sync (`rerank_sync`) evaluation pipelines.
 - **Zero-Dependency Local Cross-Encoder (`rag/rerankers.py`):** Added `LocalCrossEncoderReranker` combining exact phrase matching, token coverage, and span compactness proximity metrics without external deep learning dependencies.
 - **Cohere Rerank Integration (`rag/rerankers.py`):** Enterprise-grade reranking via `CohereReranker` calling `api.cohere.com/v2/rerank` with SSRF URL validation and persistent HTTP connection pooling.
-- **Dynamic Reranker Factory (`rag/rerankers.py`):** Added `RerankerFactory.create(provider="local"|"cohere", ...)` for dynamic provider selection.
+- **Dynamic Reranker Factory (`rag/rerankers.py`):** Added `RerankerFactory.create(provider="local"|"cohere",.)` for dynamic provider selection.
 - **Two-Stage RAG Pipeline (`rag/engine.py`):** Integrated optional `reranker` in `RAGEngine` retrieval. When configured, candidate chunks are retrieved from the vector store (`top_k * 3`) and refined via cross-encoder scoring down to `top_k`.
 
 ---
@@ -176,9 +176,9 @@ All notable changes to this project are documented in this file following [Keep 
 ## [v0.7.0] - 2026-11-08
 
 ### Added
-- **Bidirectional MCP Client (`mcp/client.py` - FEAT-EXT-01):** Implemented `FrameworkMCPClient` supporting both standard IO (`stdio`) subprocess execution and HTTP Server-Sent Events (`sse`) transports.
+- **Bidirectional MCP Client (`mcp/client.py`):** Implemented `FrameworkMCPClient` supporting both standard IO (`stdio`) subprocess execution and HTTP Server-Sent Events (`sse`) transports.
 - **Dynamic Tool Mounting into `ToolRegistry` (`mcp/client.py`):** Wrapped remote MCP server tools transparently as native `MCPRemoteTool` subclasses of `Tool`, enabling seamless registration in `ToolRegistry` and `global_tool_registry` with schema inspection and async tool execution.
-- **Factory Helper (`mcp/client.py`):** Added `create_mcp_client(transport="stdio"|"sse", ...)` helper for declarative instantiation.
+- **Factory Helper (`mcp/client.py`):** Added `create_mcp_client(transport="stdio"|"sse",.)` helper for declarative instantiation.
 - **Dedicated Client Exceptions (`core/exceptions.py`):** Added `MCPClientError`, `MCPConnectionError`, and `MCPToolCallError` with contextual error details.
 
 ---
@@ -201,7 +201,7 @@ All notable changes to this project are documented in this file following [Keep 
 - **Configurable DNS Rebinding Protection (`api/mcp.py`):** Host header validation with local/test allowlist, rejecting spoofed hosts with HTTP 421.
 - **SSRF Base URL Validation (`core/security.py`):** Validation blocking private, link-local, and cloud metadata IPs on provider base URLs.
 - **Secret Masking & Settings Immutability (`core/config.py`):** Converted API keys to `pydantic.SecretStr` and froze `Settings`.
-- **Structured XML Prompt Context (`rag/engine.py`):** XML `<context><document id="...">` document wrapping defending against prompt injection.
+- **Structured XML Prompt Context (`rag/engine.py`):** XML `<context><document id=".">` document wrapping defending against prompt injection.
 - **Collection Coroutine Safety (`rag/vectorstore.py`):** Per-collection `asyncio.Lock` preventing dictionary mutation during concurrent operations.
 - **Shared Persistent HTTP Connection Pool (`core/llm.py`, `rag/embeddings.py`):** Reusable `httpx.AsyncClient` pool with `aclose()` lifecycle.
 - **Non-Blocking Synchronous Tools (`tools/base.py`):** Offloaded synchronous tools to worker threads via `asyncio.to_thread`.
@@ -223,11 +223,11 @@ All notable changes to this project are documented in this file following [Keep 
 - **Native Anthropic Client:** Direct Anthropic Messages API support with system prompt handling, retries, and structured outputs.
 - **SSE Streaming:** Real-time token streaming in `complete_stream()`, `RAGEngine.query_stream()`, and `POST /rag/query/stream` FastAPI route.
 - **In-Memory Semantic Caching (`core/cache.py`):** Zero-dependency cosine similarity cache with LRU eviction, TTL expiration, namespace partitioning, and `CachedLLMClient`.
-- **Pre-Normalized Vector Search (`PERF-01`):** Pre-normalized embeddings during ingestion with single query norm computation and opportunistic NumPy/BLAS GEMV acceleration (~85x speedup).
+- **Pre-Normalized Vector Search:** Pre-normalized embeddings during ingestion with single query norm computation and opportunistic NumPy/BLAS GEMV acceleration (~85x speedup).
 
 ### Fixed
-- **Text Splitter Overlap (`TASK-01`):** Implemented sliding window `chunk_overlap` in `CharacterTextSplitter`.
-- **Text Splitter Order (`TASK-02`):** Fixed chunk ordering in `RecursiveTextSplitter` by flushing buffer prior to recursive sub-splits.
+- **Text Splitter Overlap:** Implemented sliding window `chunk_overlap` in `CharacterTextSplitter`.
+- **Text Splitter Order:** Fixed chunk ordering in `RecursiveTextSplitter` by flushing buffer prior to recursive sub-splits.
 
 ---
 
