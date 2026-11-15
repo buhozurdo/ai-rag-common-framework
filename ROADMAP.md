@@ -33,144 +33,95 @@ The maturity lifecycle of every minor version progresses across 4 distinct chann
 
 ---
 
-## 📊 Release Train Progression Matrix
+## 📌 Release History Summary (v0.1.0 – v0.18.0)
 
-As the framework evolves, the pipeline relationship across channels progresses as follows:
-
-| Global Milestone | Canary (Pre-Alpha) | Alpha (Devs: -4) | Beta (-2) | Release (Production) |
-| :--- | :--- | :--- | :--- | :--- |
-| **Phase 1** | v0.5.0-canary | v0.1.0-alpha | — | — |
-| **Phase 2** | v0.6.0-canary | v0.2.0-alpha | — | — |
-| **Phase 3** | v0.7.0-canary | v0.3.0-alpha | v0.1.0-beta | — |
-| **Phase 4** | v0.8.0-canary | v0.4.0-alpha | v0.2.0-beta | — |
-| **Phase 5** | v0.9.0-canary | v0.5.0-alpha | v0.3.0-beta | **v0.1.0 (GA)** |
-| **Phase 6** | v1.0.0-canary | v0.6.0-alpha | v0.4.0-beta | **v0.2.0 (GA)** |
-| **Phase 7** | — | v0.5.0-alpha | — | **v0.3.0 (GA)** |
-| **Phase 8** | — | — | — | **v0.4.0 (GA)** |
-| **Phase 9** | — | **v0.5.0-alpha (Completed)** | v0.5.0-beta | **v0.5.0 (Upcoming)** |
-
----
-
-## 📌 Minor Versions & Feature Breakdown
-
-### 🔹 v0.1.0 — "Foundation & Core Architecture" *(Status: Released)*
-* **Objective:** Clean, lightweight core foundation, typed configuration, and an agnostic LLM client.
-* **Features:**
-  * Package setup via `pyproject.toml` (PEP 517/518/621).
-  * Centralized typed settings via `pydantic-settings` (`core/config.py`).
-  * Unified async LLM client for Gemini, OpenAI, Ollama, DeepSeek, and Groq.
-  * Native Structured Outputs with Pydantic validation.
-  * Standard exception hierarchy and exponential backoff on transient errors (`RateLimitError`).
+| Version | Status | Milestone Focus |
+|---|:---:|---|
+| **v0.1.0** | Released | Foundation, Unified Agnostic LLM Client & Typed Settings |
+| **v0.2.0** | Released | Tooling Engine & Native MCP 2.x Server (stdio/SSE) |
+| **v0.3.0** | Released | Modular RAG Core, Text Splitters & InMemoryVectorStore |
+| **v0.4.0** | Released | FastAPI Gateway, Okapi BM25 & Hybrid Retrieval |
+| **v0.5.0** | Released | Enterprise Resilience, Fallbacks, Streaming & Semantic Cache |
+| **v0.5.1** | Released | Performance SLA Benchmarks & Vector BLAS Optimization |
+| **v0.7.0** | Released | Bidirectional MCP Client & Tool Mounting |
+| **v0.8.0** | Released | Cross-Encoder Rerankers (Local & Cohere) & Two-Stage RAG |
+| **v0.9.0** | Released | Autonomous ReAct Agent Framework & Human-in-the-Loop Hooks |
+| **v0.10.0** | Released | Input/Output Guardrails, Prompt Moderation & PII Sanitizer |
+| **v0.11.0** | Released | Observability, Token Cost Tracker & Prometheus Metrics |
+| **v0.12.0** | Released | Lightweight RAG Triad Evaluator & Hallucination Detector |
+| **v0.13.0** | Released | Unified Framework CLI (`ai-rag`), REPL & Doctor Diagnostics |
+| **v0.14.0** | Released | Multi-Query & HyDE Retrieval Strategies with Multi-List RRF |
+| **v0.15.0** | Released | Embedded SQLite Vector Store with FTS5 BM25 Hybrid Search |
+| **v0.16.0** | Released | Multi-Agent Supervisor & Shared State Bus (`AgentBus`) |
+| **v0.17.0** | Released | Stateful Directed Graph Workflow Engine (`StateGraph`) |
+| **v0.18.0** | Released | Ephemeral Code Interpreter & Tool Sandboxing |
 
 ---
 
-### 🔹 v0.2.0 — "Tooling & MCP Engine" *(Status: Released)*
-* **Objective:** Universal tool ecosystem and native Model Context Protocol (MCP 2.x) support.
-* **Features:**
-  * `@tool` decorator with automatic JSON Schema generation via Pydantic introspection.
-  * Centralized `ToolRegistry` for tool discovery and dynamic execution.
-  * Official MCP 2.x server adapter (`FrameworkMCPServer`) covering **Tools, Resources, and Prompts**.
-  * **Dual-Use Tools:** A single Python function serves both internal LLM agent workflows and external MCP clients.
-  * Transport support for **stdio** (Cursor, Claude Desktop, Antigravity) and **SSE** (Web / HTTP / ASGI).
+## 🔮 Future Development Milestones & Epics Backlog
+
+To maintain a competitive edge against monolithic frameworks (LangChain, LlamaIndex) while preserving our **zero-bloat, stdlib-first, type-safe architecture**, the following epics are scheduled:
 
 ---
 
-### 🔹 v0.3.0 — "Modular RAG Core" *(Status: Released)*
-* **Objective:** Modular, decoupled Retrieval-Augmented Generation (RAG) engine.
-* **Features:**
-  * Abstract interfaces for Embeddings and Vector Stores.
-  * `InMemoryVectorStore` with cosine similarity, zero external database requirements, metadata filtering (`filter_metadata`), and JSON persistence.
-  * Text chunking with `CharacterTextSplitter` and `RecursiveTextSplitter` with lineage tracking (`parent_id`, `chunk_index`).
-  * `RAGEngine` orchestrator with direct MCP export via `engine.as_tool()`.
-
----
-
-### 🔹 v0.4.0 — "FastAPI Service & Hybrid Endpoints" *(Status: Released)*
-* **Objective:** Production-grade REST API, Okapi BM25 hybrid search, and seamless MCP-over-SSE gateway integration.
-* **Features:**
-  * Reusable FastAPI application factory `create_app` with standard CORS, liveness (`/healthz`), and readiness (`/readyz`) probes.
-  * Automated exception handlers translating framework exceptions to standard HTTP status codes.
-  * Pre-built REST router `create_rag_router` (`/rag/query`, `/rag/retrieve`, `/rag/ingest`, `/rag/collections`).
-  * Pure-Python Okapi BM25 indexing and Reciprocal Rank Fusion (RRF) for hybrid retrieval (`mode="hybrid"`).
-  * Multi-tenant collection isolation with independent BM25 statistics and multi-collection persistence.
-  * Native mounting utility `mount_mcp_to_fastapi` with built-in `MCPAuthMiddleware` supporting Bearer, `X-API-Key`, and query parameter auth.
-* **Security Hardening & Bug Fixes (Consolidated):**
-  * Fixed CORS specification vulnerability (wildcard origin disabled credentials by default to prevent cross-origin credential theft).
-  * Hardened MCP auth middleware (query-param auth default changed to `False` to prevent key exposure in access logs).
-  * Corrected `cosine_similarity` rank inversion (uniform `[-1.0, 1.0]` mapping preventing negative scores from outranking orthogonal vectors).
-  * Prevented vector store data loss on corrupt JSON in `load_from_json` via pre-validation.
-  * Fixed BM25 duplicate document frequency accumulation during document re-indexing (upsert semantics).
-  * Enforced validation on retrieval modes in `RAGEngine.retrieve` (raising `ValueError` on unknown modes).
-  * Handled empty choices and `message=None` in LLM client without crashing.
-  * Added RFC 7235 `WWW-Authenticate: Bearer` challenge header to HTTP 401 responses.
-  * Suppressed internal exception details in production responses.
-  * Expanded regression test suite to 103 automated tests (44 new edge-case and security tests).
-
----
-
-### 🔹 v0.5.0 / v0.5.1 — "Enterprise Resilience, Hardening & Concurrency" *(Status: Released)*
-* **Objective:** Multi-provider resilience, streaming generation, enterprise security hardening, and 100% SLA compliance.
-* **Tracked Tasks & Features:**
-  * **Bloque C Core:**
-    * Multi-provider model fallbacks with automatic failover (`FallbackLLMClient`, `AnthropicClient`, `AllProvidersFailedError`).
-    * Native Server-Sent Events (SSE) streaming (`complete_stream()`, `RAGEngine.query_stream()`, `/rag/query/stream`).
-    * In-memory semantic caching with cosine similarity, LRU eviction, and TTL (`SemanticCache`, `CachedLLMClient`).
-  * **Security & Isolation:**
-    * Path traversal validation in VectorStore persistence (`save_to_json` / `load_from_json`).
-    * Structured XML tagging for context injection in RAG synthesis to mitigate indirect prompt injection.
-    * Secret masking using `pydantic.SecretStr` and frozen settings singleton.
-    * Configurable DNS rebinding and SSRF protection across HTTP servers and clients.
-  * **Concurrency & Resource Management:**
-    * Thread/coroutine safety locks for `InMemoryVectorStore`.
-    * Non-blocking async execution for synchronous tools via `asyncio.to_thread`.
-    * Shared persistent `httpx.AsyncClient` connection pools.
-  * **Performance & 100% SLA Benchmark Compliance (v0.5.1):**
-    * Bounded memoization for recursive text splitting (`0.005 ms` average, 127k ops/s).
-    * Vectorized metadata filter index caching with BLAS GEMV and `np.argpartition` (`0.130 ms`).
-    * LRU cached deterministic vector generation in `MockEmbeddingProvider` (`0.150 ms`).
-
----
-
-### 🔹 v0.6.0 — "Autonomous ReAct Agent Framework" *(Status: In Backlog — EPIC-04)*
-* **Objective:** Lightweight autonomous agent reasoning loop, conversation memory, and human approval safeguards.
+### 🔹 v0.19.0 — "Multimodal Vision & Media Intelligence" *(EPIC-11)*
+* **Objective:** Enable multi-modal understanding for vision-capable models (Gemini 2.0, GPT-4o, Claude 3.5), allowing agents and RAG to process charts, diagrams, screenshots, and visual documents.
 * **Features & Tasks:**
-  * **FEAT-04 / TASK-14:** `ReActAgent` execution loop with Thought-Action-Observation cycle and iteration limits.
-  * **FEAT-05 / TASK-15:** Short-term conversation message buffer and vector-augmented long-term memory.
-  * **FEAT-06 / TASK-16:** Human-in-the-loop (HITL) pre-execution confirmation hooks for sensitive tools.
+  * **FEAT-22:** Multimodal `ChatMessage` supporting structured content blocks (text, base64 images, remote URLs).
+  * **FEAT-23:** Visual RAG support: image metadata extraction, figure descriptions, and multimodal embedding integration.
+  * **FEAT-24:** Built-in `image_inspector` tool for agents to inspect visual assets dynamically during reasoning loops.
 
 ---
 
-### 🔹 v0.7.0 — "Observability, Telemetry & Cost Accounting" *(Status: In Backlog — EPIC-05)*
-* **Objective:** Production distributed tracing, Prometheus metrics export, and dynamic token cost tracking.
+### 🔹 v0.20.0 — "Native Document Loaders & Context-Aware Parsers" *(EPIC-12)*
+* **Objective:** Native, zero-heavy-dependency document ingestion for common enterprise formats (PDF, Markdown, CSV, JSON, HTML) with hierarchical context tracking.
 * **Features & Tasks:**
-  * **FEAT-07:** Token usage & cost attribution engine with configurable provider pricing tables.
-  * **FEAT-08:** Prometheus metrics exporter & OpenTelemetry tracing middleware for HTTP, LLM, and vector search.
-  * **TASK-17:** Distributed trace context propagation (`traceparent`, `tracestate`) across async pipelines.
+  * **FEAT-25:** Zero-bloat file loaders: `DirectoryLoader`, `MarkdownLoader`, `CSVLoader`, `PDFLoader` with page/header metadata.
+  * **FEAT-26:** Context-aware chunking: Parent Document Retriever and Sentence-Window chunking preserving adjacent context windows.
+  * **FEAT-27:** Batch document ingestion CLI command (`ai-rag ingest --dir ./docs --store sqlite`).
 
 ---
 
-### 🔹 v0.8.0 — "RAG Quality Evaluation & Guardrails" *(Status: In Backlog — EPIC-06)*
-* **Objective:** Zero-external-dependency RAG Triad quality metrics, content moderation, and PII redaction.
+### 🔹 v0.21.0 — "Durable Workflow State, Checkpointing & Time Travel" *(EPIC-13)*
+* **Objective:** Transactional persistence for `StateGraph` workflows allowing executions to be paused, persisted across server restarts, resumed via API, or rewound (*time travel*).
 * **Features & Tasks:**
-  * **FEAT-09:** Lightweight RAG Triad evaluation suite (Context Relevance, Groundedness, Answer Relevance).
-  * **FEAT-10:** Input/Output guardrails and regex/pattern PII sanitization filters.
-  * **TASK-18:** Statistical and embedding-based hallucination detection heuristics and grounding confidence scores.
+  * **FEAT-28:** `SQLiteCheckpointSaver`: Persistent disk backend storing graph execution snapshots indexed by `thread_id` and `checkpoint_id`.
+  * **FEAT-29:** Workflow resumption and Human-in-the-Loop pause gates resuming execution via HTTP REST triggers.
+  * **FEAT-30:** Graph time travel and branching (`graph.rewind(thread_id, step)`), allowing state inspection and alternate branch execution.
 
 ---
 
-### 🔹 v0.9.0 — "Framework CLI & Developer Experience" *(Status: In Backlog — EPIC-07)*
-* **Objective:** Unified CLI utility for project scaffolding, standalone MCP server runners, and diagnostic doctor.
+### 🔹 v0.22.0 — "Self-Correcting Agent Validation & Dependency Injection" *(EPIC-14)*
+* **Objective:** Eliminate brittle agent tool failures by feeding Pydantic validation errors directly back into LLM reasoning loops, and support clean dependency injection.
 * **Features & Tasks:**
-  * **FEAT-11:** Unified framework CLI (`ai-rag` / `rag-mcp`) for microservice bootstrapping and runtime serving.
-  * **FEAT-12:** Interactive terminal REPL & playground for testing prompts, tools, and vector stores live.
-  * **TASK-19:** Configuration doctor (`ai-rag doctor`) verifying environment variables, Ollama status, and ports.
+  * **FEAT-31:** Self-correcting tool execution loop: Automatic reflection capturing `ValidationError` and reprompting the model with error diagnostics.
+  * **FEAT-32:** Contextual Dependency Injection (`ExecutionContext[T]`): Clean runtime injection of database pools, auth tokens, and tenant IDs into `@tool` functions.
+  * **FEAT-33:** Dynamic system prompts: State-dependent system prompt generators that evolve as workflows progress.
 
 ---
 
-### 🔹 v1.0.0 — "Production GA & Enterprise MVP" *(Status: In Backlog — EPIC-08)*
-* **Objective:** Frozen public API, enterprise containerization, high-concurrency stress testing, and documentation portal.
+### 🔹 v0.23.0 — "Real-Time Event Streaming for Multi-Agent & Workflows" *(EPIC-15)*
+* **Objective:** Real-time visibility into multi-agent and state graph execution via granular, asynchronous event generators and Server-Sent Events (SSE).
 * **Features & Tasks:**
-  * **FEAT-13:** Public API contract freeze and runtime deprecation warnings architecture.
-  * **FEAT-14:** Multi-stage production Dockerfiles, Docker Compose production profiles, and Kubernetes manifests.
-  * **TASK-20:** Enterprise SLA stress testing (10,000+ requests, 100+ concurrent users) with zero memory leaks.
+  * **FEAT-34:** Asynchronous event streaming generator (`graph.stream()`, `supervisor.stream()`) yielding node transitions, token chunks, and tool execution events.
+  * **FEAT-35:** FastAPI Workflow SSE router exposing `/workflows/{name}/stream` for live web dashboards.
+  * **FEAT-36:** OpenTelemetry distributed step spans for each graph transition and agent delegation step.
+
+---
+
+### 🔹 v0.24.0 — "Enterprise Tenant Governance & Budget Enforcers" *(EPIC-16)*
+* **Objective:** Production multi-tenant safety controls enforcing strict spending caps, rate limiters, and quota management.
+* **Features & Tasks:**
+  * **FEAT-37:** Hard spending limit enforcer: Proactively blocking LLM calls when tenant token or dollar budget thresholds are reached.
+  * **FEAT-38:** Sliding-window rate limiter per tenant / API key integrated with FastAPI middleware.
+  * **FEAT-39:** Tenant audit ledger and spending breakdown exporter.
+
+---
+
+### 🔹 v1.0.0 — "Production GA & Enterprise MVP" *(EPIC-08)*
+* **Objective:** Final API freeze, enterprise containerization, concurrency certification, and developer documentation portal.
+* **Features & Tasks:**
+  * **FEAT-13:** Public API contract freeze and runtime deprecation warning system.
+  * **FEAT-14:** Production multi-stage Dockerfiles, Docker Compose profiles, and Kubernetes manifests.
+  * **TASK-20:** Concurrency certification under high load (10,000+ requests, 100+ concurrent workers) with zero memory leaks.
   * **TASK-21:** Comprehensive developer documentation portal, cookbooks, and end-to-end tutorials.
