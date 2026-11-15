@@ -58,70 +58,70 @@ The maturity lifecycle of every minor version progresses across 4 distinct chann
 
 ---
 
-## 🔮 Future Development Milestones & Epics Backlog
+## 🔮 Future Development Milestones
 
-To maintain a competitive edge against monolithic frameworks (LangChain, LlamaIndex) while preserving our **zero-bloat, stdlib-first, type-safe architecture**, the following epics are scheduled:
+To maintain a competitive edge against monolithic frameworks while preserving our **zero-bloat, stdlib-first, type-safe architecture**, the following milestones are scheduled:
 
 ---
 
-### 🔹 v0.19.0 — "Multimodal Vision & Media Intelligence" *(EPIC-11)*
+### 🔹 v0.19.0 — Multimodal Vision & Media Intelligence
 * **Objective:** Enable multi-modal understanding for vision-capable models (Gemini 2.0, GPT-4o, Claude 3.5), allowing agents and RAG to process charts, diagrams, screenshots, and visual documents.
-* **Features & Tasks:**
-  * **FEAT-22:** Multimodal `ChatMessage` supporting structured content blocks (text, base64 images, remote URLs).
-  * **FEAT-23:** Visual RAG support: image metadata extraction, figure descriptions, and multimodal embedding integration.
-  * **FEAT-24:** Built-in `image_inspector` tool for agents to inspect visual assets dynamically during reasoning loops.
+* **Key Capabilities:**
+  * Multimodal `ChatMessage` supporting structured content blocks (text, base64 images, remote URLs).
+  * Visual RAG support: image metadata extraction, figure descriptions, and multimodal embedding integration.
+  * Built-in `image_inspector` tool for agents to inspect visual assets dynamically during reasoning loops.
 
 ---
 
-### 🔹 v0.20.0 — "Native Document Loaders & Context-Aware Parsers" *(EPIC-12)*
+### 🔹 v0.20.0 — Native Document Loaders & Context-Aware Parsers
 * **Objective:** Native, zero-heavy-dependency document ingestion for common enterprise formats (PDF, Markdown, CSV, JSON, HTML) with hierarchical context tracking.
-* **Features & Tasks:**
-  * **FEAT-25:** Zero-bloat file loaders: `DirectoryLoader`, `MarkdownLoader`, `CSVLoader`, `PDFLoader` with page/header metadata.
-  * **FEAT-26:** Context-aware chunking: Parent Document Retriever and Sentence-Window chunking preserving adjacent context windows.
-  * **FEAT-27:** Batch document ingestion CLI command (`ai-rag ingest --dir ./docs --store sqlite`).
+* **Key Capabilities:**
+  * Zero-bloat file loaders: `DirectoryLoader`, `MarkdownLoader`, `CSVLoader`, `PDFLoader` with page/header metadata.
+  * Context-aware chunking: Parent Document Retriever and Sentence-Window chunking preserving adjacent context windows.
+  * Batch document ingestion CLI command (`ai-rag ingest --dir ./docs --store sqlite`).
 
 ---
 
-### 🔹 v0.21.0 — "Durable Workflow State, Checkpointing & Time Travel" *(EPIC-13)*
+### 🔹 v0.21.0 — Durable Workflow State, Checkpointing & Time Travel
 * **Objective:** Transactional persistence for `StateGraph` workflows allowing executions to be paused, persisted across server restarts, resumed via API, or rewound (*time travel*).
-* **Features & Tasks:**
-  * **FEAT-28:** `SQLiteCheckpointSaver`: Persistent disk backend storing graph execution snapshots indexed by `thread_id` and `checkpoint_id`.
-  * **FEAT-29:** Workflow resumption and Human-in-the-Loop pause gates resuming execution via HTTP REST triggers.
-  * **FEAT-30:** Graph time travel and branching (`graph.rewind(thread_id, step)`), allowing state inspection and alternate branch execution.
+* **Key Capabilities:**
+  * `SQLiteCheckpointSaver`: Persistent disk backend storing graph execution snapshots indexed by `thread_id` and `checkpoint_id`.
+  * Workflow resumption and Human-in-the-Loop pause gates resuming execution via HTTP REST triggers.
+  * Graph time travel and branching (`graph.rewind(thread_id, step)`), allowing state inspection and alternate branch execution.
 
 ---
 
-### 🔹 v0.22.0 — "Self-Correcting Agent Validation & Dependency Injection" *(EPIC-14)*
+### 🔹 v0.22.0 — Self-Correcting Agent Validation & Dependency Injection
 * **Objective:** Eliminate brittle agent tool failures by feeding Pydantic validation errors directly back into LLM reasoning loops, and support clean dependency injection.
-* **Features & Tasks:**
-  * **FEAT-31:** Self-correcting tool execution loop: Automatic reflection capturing `ValidationError` and reprompting the model with error diagnostics.
-  * **FEAT-32:** Contextual Dependency Injection (`ExecutionContext[T]`): Clean runtime injection of database pools, auth tokens, and tenant IDs into `@tool` functions.
-  * **FEAT-33:** Dynamic system prompts: State-dependent system prompt generators that evolve as workflows progress.
+* **Key Capabilities:**
+  * Self-correcting tool execution loop: Automatic reflection capturing `ValidationError` and reprompting the model with error diagnostics.
+  * Contextual Dependency Injection (`ExecutionContext[T]`): Clean runtime injection of database pools, auth tokens, and tenant IDs into `@tool` functions.
+  * Dynamic system prompts: State-dependent system prompt generators that evolve as workflows progress.
 
 ---
 
-### 🔹 v0.23.0 — "Real-Time Event Streaming for Multi-Agent & Workflows" *(EPIC-15)*
+### 🔹 v0.23.0 — Real-Time Event Streaming for Multi-Agent & Workflows
 * **Objective:** Real-time visibility into multi-agent and state graph execution via granular, asynchronous event generators and Server-Sent Events (SSE).
-* **Features & Tasks:**
-  * **FEAT-34:** Asynchronous event streaming generator (`graph.stream()`, `supervisor.stream()`) yielding node transitions, token chunks, and tool execution events.
-  * **FEAT-35:** FastAPI Workflow SSE router exposing `/workflows/{name}/stream` for live web dashboards.
-  * **FEAT-36:** OpenTelemetry distributed step spans for each graph transition and agent delegation step.
+* **Key Capabilities:**
+  * Asynchronous event streaming generator (`graph.stream()`, `supervisor.stream()`) yielding node transitions, token chunks, and tool execution events.
+  * FastAPI Workflow SSE router exposing `/workflows/{name}/stream` for live web dashboards.
+  * OpenTelemetry distributed step spans for each graph transition and agent delegation step.
 
 ---
 
-### 🔹 v0.24.0 — "Enterprise Tenant Governance & Budget Enforcers" *(EPIC-16)*
+### 🔹 v0.24.0 — Enterprise Tenant Governance & Budget Enforcers
 * **Objective:** Production multi-tenant safety controls enforcing strict spending caps, rate limiters, and quota management.
-* **Features & Tasks:**
-  * **FEAT-37:** Hard spending limit enforcer: Proactively blocking LLM calls when tenant token or dollar budget thresholds are reached.
-  * **FEAT-38:** Sliding-window rate limiter per tenant / API key integrated with FastAPI middleware.
-  * **FEAT-39:** Tenant audit ledger and spending breakdown exporter.
+* **Key Capabilities:**
+  * Hard spending limit enforcer: Proactively blocking LLM calls when tenant token or dollar budget thresholds are reached.
+  * Sliding-window rate limiter per tenant / API key integrated with FastAPI middleware.
+  * Tenant audit ledger and spending breakdown exporter.
 
 ---
 
-### 🔹 v1.0.0 — "Production GA & Enterprise MVP" *(EPIC-08)*
+### 🔹 v1.0.0 — Production GA & Enterprise MVP
 * **Objective:** Final API freeze, enterprise containerization, concurrency certification, and developer documentation portal.
-* **Features & Tasks:**
-  * **FEAT-13:** Public API contract freeze and runtime deprecation warning system.
-  * **FEAT-14:** Production multi-stage Dockerfiles, Docker Compose profiles, and Kubernetes manifests.
-  * **TASK-20:** Concurrency certification under high load (10,000+ requests, 100+ concurrent workers) with zero memory leaks.
-  * **TASK-21:** Comprehensive developer documentation portal, cookbooks, and end-to-end tutorials.
+* **Key Capabilities:**
+  * Public API contract freeze and runtime deprecation warning system.
+  * Production multi-stage Dockerfiles, Docker Compose profiles, and Kubernetes manifests.
+  * Concurrency certification under high load (10,000+ requests, 100+ concurrent workers) with zero memory leaks.
+  * Comprehensive developer documentation portal, cookbooks, and end-to-end tutorials.
