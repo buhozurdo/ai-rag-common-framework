@@ -54,7 +54,7 @@ def _deterministic_mock_vector(dimension: int, text: str) -> tuple[float, ...]:
 
     # Word-level feature hashing
     for w in words:
-        h = int(hashlib.md5(w.encode("utf-8")).hexdigest(), 16)
+        h = int(hashlib.sha256(w.encode("utf-8"), usedforsecurity=False).hexdigest(), 16)
         idx = h % dimension
         sign = 1.0 if ((h >> 8) & 1) else -1.0
         vec[idx] += 2.0 * sign
@@ -62,7 +62,7 @@ def _deterministic_mock_vector(dimension: int, text: str) -> tuple[float, ...]:
     # Character n-gram feature hashing (3-grams) for subword similarity
     for i in range(max(1, len(cleaned) - 2)):
         ng = cleaned[i : i + 3]
-        h = int(hashlib.md5(ng.encode("utf-8")).hexdigest(), 16)
+        h = int(hashlib.sha256(ng.encode("utf-8"), usedforsecurity=False).hexdigest(), 16)
         idx = h % dimension
         sign = 1.0 if ((h >> 8) & 1) else -1.0
         vec[idx] += 0.5 * sign
