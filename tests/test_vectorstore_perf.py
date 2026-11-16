@@ -25,6 +25,7 @@ def test_normalize_vector():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(not _HAS_NUMPY, reason="NumPy is required for BLAS GEMV equivalence test")
 async def test_numpy_and_pure_python_search_equivalence():
     """Verify that NumPy BLAS GEMV path and Pure Python pre-normalized path produce identical results."""
     store_py = InMemoryVectorStore(use_numpy=False)
@@ -62,6 +63,7 @@ async def test_numpy_and_pure_python_search_equivalence():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(not _HAS_NUMPY, reason="NumPy is required to test BLAS GEMV matrix cache")
 async def test_vectorstore_cache_invalidation_lifecycle():
     """Verify matrix cache correctly invalidates on document addition, deletion, and clear."""
     store = InMemoryVectorStore(use_numpy=True)
