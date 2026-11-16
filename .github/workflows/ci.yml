@@ -24,8 +24,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install --only-binary :all: -r requirements-lock.txt
-          pip install --only-binary :all: --no-deps -e .
+          pip install --only-binary=:all: -r requirements-lock.txt
+          pip install --only-binary=:all: --no-deps -e .
 
       - name: Run tests
         run: python -m pytest tests/ --cov=common_framework --cov-branch --cov-report=xml

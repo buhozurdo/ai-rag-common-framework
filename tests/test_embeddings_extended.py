@@ -50,6 +50,10 @@ async def test_embedding_factory_all_providers():
     assert gemini_prov.api_key == "gemini-key-test"
     assert "googleapis.com" in gemini_prov.base_url
 
+    # Gemini provider with explicit api_key override
+    gemini_custom = EmbeddingFactory.create("gemini", settings=settings, api_key="custom-override-key")
+    assert gemini_custom.api_key == "custom-override-key"
+
     # 5. Unsupported provider raises ConfigurationError
     with pytest.raises(ConfigurationError, match="Unsupported embedding provider: 'unknown'"):
         EmbeddingFactory.create("unknown", settings=settings)
@@ -163,4 +167,29 @@ async def test_openai_compatible_embedding_provider_internal_client():
     # Clean teardown
     await provider.aclose()
     assert provider._internal_client is None
+
+
+def test_deterministic_mock_vector_sha256_feature_hashing():
+    """Verify deterministic mock vector produces consistent vectors via sha256."""
+    from common_framework.rag.embeddings import _deterministic_mock_vector
+
+    vec1 = _deterministic_mock_vector(64, "machine learning rag framework")
+    vec2 = _deterministic_mock_vector(64, "machine learning rag framework")
+    assert len(vec1) == 64
+    assert vec1 == vec2
+    # Verify non-trivial magnitude
+    assert sum(x * x for x in vec1) > 0.0
+
+
+def test_settings_populate_by_name():
+    """Verify Settings populates correctly via field names as well as aliases."""
+    cfg = Settings(
+        gemini_api_key="direct-gemini-key",
+        openai_api_key="direct-openai-key",
+        ollama_base_url="http://custom-ollama:11434",
+    )
+    assert cfg.gemini_api_key.get_secret_value() == "direct-gemini-key"
+    assert cfg.openai_api_key.get_secret_value() == "direct-openai-key"
+    assert cfg.ollama_base_url == "http://custom-ollama:11434"
+
 

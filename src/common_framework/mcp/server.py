@@ -8,8 +8,8 @@ from typing import Any, Callable, Optional, Union
 
 try:
     from mcp.server.mcpserver import MCPServer
-except ImportError:
-    try:
+except ImportError:  # pragma: no cover
+    try:  # pragma: no cover
         from mcp.server import MCPServer  # type: ignore
     except ImportError:  # pragma: no cover
         MCPServer = None  # type: ignore

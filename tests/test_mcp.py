@@ -68,3 +68,13 @@ async def test_mcp_server_resource_and_prompt():
     prompts = await server.list_prompts()
     prompt_names = [p.name for p in prompts]
     assert "greet_user" in prompt_names
+
+
+def test_mcp_server_missing_dependency(monkeypatch):
+    """Verify FrameworkMCPServer raises RuntimeError when mcp package is missing."""
+    import common_framework.mcp.server as mcp_server_mod
+
+    monkeypatch.setattr(mcp_server_mod, "MCPServer", None)
+    with pytest.raises(RuntimeError, match="The 'mcp' package"):
+        FrameworkMCPServer(name="failing-server")
+
