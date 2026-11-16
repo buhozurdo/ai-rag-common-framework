@@ -22,8 +22,7 @@ jobs:
 
       - name: Install build tools and dependencies
         run: |
-          python -m pip install --only-binary :all: --upgrade pip
-          python -m pip install --only-binary :all: build
+          pip install --only-binary :all: build==1.2.2.post1
 
       - name: Build dists (.whl and .tar.gz)
         run: |
