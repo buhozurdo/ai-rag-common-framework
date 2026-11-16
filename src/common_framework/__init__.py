@@ -7,6 +7,11 @@ with minimal boilerplate.
 
 from common_framework._version import __version__
 from common_framework.core.config import Settings, get_settings
+from common_framework.core.deprecation import (
+    FrameworkDeprecationWarning,
+    deprecated,
+    warn_deprecated_parameter,
+)
 from common_framework.core.cache import (
     CachedLLMClient,
     SemanticCache,
@@ -95,6 +100,7 @@ from common_framework.observability.cost import (
     CostRecord,
     ModelPricing,
     TokenCostTracker,
+    get_global_cost_tracker,
     global_cost_tracker,
 )
 from common_framework.observability.metrics import (
@@ -280,6 +286,10 @@ __all__ = [
     "CostRecord",
     "TokenCostTracker",
     "global_cost_tracker",
+    "get_global_cost_tracker",
+    "FrameworkDeprecationWarning",
+    "deprecated",
+    "warn_deprecated_parameter",
     "MetricFamily",
     "PrometheusRegistry",
     "create_metrics_router",

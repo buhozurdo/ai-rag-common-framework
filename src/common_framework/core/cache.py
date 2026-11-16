@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 from typing import Any, Optional, Sequence, Union
@@ -268,6 +269,19 @@ class CachedLLMClient(BaseLLMClient):
         self.cache = cache or SemanticCache()
         self.namespace = namespace
 
+    def _compute_namespace(
+        self,
+        messages: list[ChatMessage],
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+    ) -> str:
+        """Compute partitioned cache namespace accounting for model, temperature, and system prompt."""
+        m_str = (model or getattr(self.underlying_client, "default_model", "default")).lower().strip()
+        t_str = f"t{temperature:.2f}" if temperature is not None else "t_def"
+        sys_msgs = [m.content for m in messages if getattr(m, "role", None) in ("system", "System", Role.SYSTEM)]
+        sys_hash = hashlib.sha256(sys_msgs[0].encode("utf-8")).hexdigest()[:8] if sys_msgs else "nosys"
+        return f"{self.namespace}:{m_str}:{t_str}:{sys_hash}"
+
     def _extract_query_text(self, messages: list[ChatMessage]) -> str:
         """Extract user prompt text for semantic indexing."""
         user_messages = [m.content for m in messages if getattr(m, "role", None) in ("user", "User", Role.USER)]
@@ -280,9 +294,10 @@ class CachedLLMClient(BaseLLMClient):
         temperature: Optional[float] = None,
         **kwargs: Any,
     ) -> ChatResponse:
+        target_namespace = self._compute_namespace(messages, model, temperature)
         query_text = self._extract_query_text(messages)
         if query_text:
-            hit = await self.cache.get(query=query_text, namespace=self.namespace)
+            hit = await self.cache.get(query=query_text, namespace=target_namespace)
             if hit is not None:
                 cached_data = hit.response
                 if isinstance(cached_data, ChatResponse):
@@ -312,7 +327,7 @@ class CachedLLMClient(BaseLLMClient):
             await self.cache.set(
                 query=query_text,
                 response=response,
-                namespace=self.namespace,
+                namespace=target_namespace,
                 metadata={"model": response.model},
             )
 
@@ -342,9 +357,10 @@ class CachedLLMClient(BaseLLMClient):
         temperature: Optional[float] = None,
         **kwargs: Any,
     ):
+        target_namespace = self._compute_namespace(messages, model, temperature)
         query_text = self._extract_query_text(messages)
         if query_text:
-            hit = await self.cache.get(query=query_text, namespace=self.namespace)
+            hit = await self.cache.get(query=query_text, namespace=target_namespace)
             if hit is not None:
                 content = hit.response.content if isinstance(hit.response, ChatResponse) else str(hit.response)
                 yield ChatStreamChunk(delta=content, model=f"{model or 'model'} (cached)", finish_reason="stop")
@@ -367,4 +383,4 @@ class CachedLLMClient(BaseLLMClient):
                 content="".join(collected),
                 model=model or "streamed-model",
             )
-            await self.cache.set(query=query_text, response=full_response, namespace=self.namespace)
+            await self.cache.set(query=query_text, response=full_response, namespace=target_namespace)

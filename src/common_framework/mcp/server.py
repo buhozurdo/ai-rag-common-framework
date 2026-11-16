@@ -7,6 +7,7 @@ import logging
 from typing import Any, Callable, Optional, Union
 from mcp.server.mcpserver import MCPServer
 
+from common_framework._version import __version__
 from common_framework.tools.base import Tool, tool
 from common_framework.tools.registry import ToolRegistry, global_tool_registry
 
@@ -24,7 +25,7 @@ class FrameworkMCPServer:
         tool_registry: Optional[ToolRegistry] = None,
     ) -> None:
         self.name = name
-        self.version = version or "0.4.0"
+        self.version = version or __version__
         self.instructions = instructions
         self.registry = tool_registry if tool_registry is not None else global_tool_registry
         self.underlying_server = MCPServer(
@@ -205,6 +206,9 @@ class FrameworkMCPServer:
             transport_security=transport_security,
             host=host,
         )
+
+    # Backwards-compatible alias for CLI and external callers
+    create_sse_app = get_sse_app
 
     def __repr__(self) -> str:
         return f"<FrameworkMCPServer name={self.name!r} version={self.version!r}>"

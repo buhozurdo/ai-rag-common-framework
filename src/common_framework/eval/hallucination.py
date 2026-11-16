@@ -10,8 +10,9 @@ from common_framework.rag.bm25 import tokenize
 from common_framework.rag.models import Document
 
 
-# Common English stop words for informational density filtering
+# Common English and Spanish stop words for informational density filtering
 _STOP_WORDS = {
+    # English
     "a", "about", "above", "after", "again", "against", "all", "am", "an", "and",
     "any", "are", "as", "at", "be", "because", "been", "before", "being", "below",
     "between", "both", "but", "by", "could", "did", "do", "does", "doing", "down",
@@ -25,6 +26,14 @@ _STOP_WORDS = {
     "they", "this", "those", "through", "to", "too", "under", "until", "up",
     "very", "was", "we", "were", "what", "when", "where", "which", "while", "who",
     "whom", "why", "with", "would", "you", "your", "yours", "yourself", "yourselves",
+    # Spanish
+    "el", "la", "los", "las", "un", "una", "unos", "unas", "de", "del", "a", "al",
+    "en", "y", "e", "o", "u", "que", "se", "por", "con", "para", "como", "estar",
+    "es", "son", "fue", "era", "su", "sus", "le", "les", "lo", "pero", "mas", "más",
+    "este", "esta", "estos", "estas", "ese", "esa", "esos", "esas", "aquel", "aquella",
+    "si", "sí", "ya", "porque", "muy", "sin", "sobre", "también", "tambien", "hasta",
+    "entre", "desde", "ni", "nos", "uno", "dos", "tanto", "donde", "cuando", "quien",
+    "quienes", "cual", "cuales", "nada", "todo", "todos", "cada", "menos", "algo", "solo",
 }
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9])")
@@ -79,9 +88,11 @@ class HallucinationDetector:
         self,
         min_sentence_grounding: float = 0.40,
         min_overall_grounding: float = 0.60,
+        stopwords: Optional[set[str]] = None,
     ) -> None:
         self.min_sentence_grounding = min_sentence_grounding
         self.min_overall_grounding = min_overall_grounding
+        self.stopwords = set(stopwords) if stopwords is not None else set(_STOP_WORDS)
 
     def _extract_context_text(
         self,
@@ -106,7 +117,7 @@ class HallucinationDetector:
 
     def _extract_content_tokens(self, text: str) -> list[str]:
         tokens = tokenize(text.lower())
-        return [t for t in tokens if t not in _STOP_WORDS and len(t) > 1]
+        return [t for t in tokens if t not in self.stopwords and len(t) > 1]
 
     def _evaluate_sentence(
         self,

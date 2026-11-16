@@ -63,6 +63,7 @@ class TokenUsage(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    cached_tokens: int = 0
 
 
 class ChatResponse(BaseModel):
@@ -92,6 +93,24 @@ class BaseLLMClient(ABC):
 
     def __init__(self, settings: Optional[Settings] = None) -> None:
         self.settings = settings or get_settings()
+
+    def _record_cost_if_enabled(
+        self,
+        response: ChatResponse,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> None:
+        """Automatically record token usage and cost in the global cost tracker."""
+        if response.usage and (response.usage.total_tokens or response.usage.prompt_tokens):
+            try:
+                from common_framework.observability.cost import global_cost_tracker
+
+                global_cost_tracker.record_usage_sync(
+                    model=response.model,
+                    usage=response.usage,
+                    metadata=metadata,
+                )
+            except Exception:
+                pass
 
     @abstractmethod
     async def complete(
@@ -264,18 +283,28 @@ class OpenAICompatibleClient(BaseLLMClient):
                     content = message.get("content", "") or ""
 
                     usage_data = data.get("usage") or {}
+                    prompt_tokens_details = usage_data.get("prompt_tokens_details") or {}
+                    cached_tokens = (
+                        prompt_tokens_details.get("cached_tokens")
+                        or usage_data.get("cached_tokens")
+                        or usage_data.get("cachedContentTokenCount", 0)
+                        or 0
+                    )
                     usage = TokenUsage(
                         prompt_tokens=usage_data.get("prompt_tokens", 0),
                         completion_tokens=usage_data.get("completion_tokens", 0),
                         total_tokens=usage_data.get("total_tokens", 0),
+                        cached_tokens=cached_tokens,
                     )
 
-                    return ChatResponse(
+                    res = ChatResponse(
                         content=content,
                         model=data.get("model", target_model),
                         usage=usage,
                         raw=data,
                     )
+                    self._record_cost_if_enabled(res)
+                    return res
                 except httpx.HTTPStatusError as exc:
                     if exc.response.status_code in (429, 500, 502, 503, 504) and attempt < max_retries:
                         backoff = 0.2 * (2 ** attempt)
@@ -634,18 +663,22 @@ class AnthropicClient(BaseLLMClient):
                     usage_data = data.get("usage") or {}
                     input_toks = usage_data.get("input_tokens", 0)
                     output_toks = usage_data.get("output_tokens", 0)
+                    cached_toks = usage_data.get("cache_read_input_tokens", 0) or 0
                     usage = TokenUsage(
                         prompt_tokens=input_toks,
                         completion_tokens=output_toks,
                         total_tokens=input_toks + output_toks,
+                        cached_tokens=cached_toks,
                     )
 
-                    return ChatResponse(
+                    res = ChatResponse(
                         content=content,
                         model=data.get("model", target_model),
                         usage=usage,
                         raw=data,
                     )
+                    self._record_cost_if_enabled(res)
+                    return res
                 except httpx.HTTPStatusError as exc:
                     # Anthropic uses 429 and 529 for overloaded
                     if (

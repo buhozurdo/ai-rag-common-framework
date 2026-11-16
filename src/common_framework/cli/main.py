@@ -120,7 +120,7 @@ def handle_run_mcp(args: argparse.Namespace) -> int:
             print("Error: 'uvicorn' is required for SSE transport. Install with: pip install ai-rag-common-framework[api]", file=sys.stderr)
             return 1
         print(f"Starting MCP SSE server '{args.name}' on http://{args.host}:{args.port}...")
-        sse_app = server.create_sse_app()
+        sse_app = server.create_sse_app(host=args.host)
         uvicorn.run(sse_app, host=args.host, port=args.port)
     return 0
 

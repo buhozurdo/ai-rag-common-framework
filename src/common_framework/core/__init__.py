@@ -1,6 +1,11 @@
 """Core module for configuration, exception handling, and LLM abstractions."""
 
 from common_framework.core.config import Settings, get_settings
+from common_framework.core.deprecation import (
+    FrameworkDeprecationWarning,
+    deprecated,
+    warn_deprecated_parameter,
+)
 from common_framework.core.exceptions import (
     AuthenticationError,
     ConfigurationError,
@@ -37,4 +42,7 @@ __all__ = [
     "TokenUsage",
     "Role",
     "LLMFactory",
+    "FrameworkDeprecationWarning",
+    "deprecated",
+    "warn_deprecated_parameter",
 ]

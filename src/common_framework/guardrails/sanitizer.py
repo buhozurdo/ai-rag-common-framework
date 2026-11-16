@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import re
 from enum import Enum
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Union
 from pydantic import BaseModel, Field
 
 
@@ -57,7 +58,11 @@ _EMAIL_RE = re.compile(
 )
 
 _PHONE_RE = re.compile(
-    r"(?:(?:\+?1\s*(?:[.-]\s*)?)?(?:\(\s*([2-9]1[02-9]|[2-9][02-8]1|[2-9][02-8][02-9])\s*\)|([2-9]1[02-9]|[2-9][02-8]1|[2-9][02-8][02-9]))\s*(?:[.-]\s*)?)?([2-9]1[02-9]|[2-9][02-9]1|[2-9][02-9]{2})\s*(?:[.-]\s*)?([0-9]{4})(?:\s*(?:#|x\.?|ext\.?|extension)\s*(\d+))?",
+    r"(?:"
+    r"\+\d{1,4}[\s.-]?(?:\(?\d{1,4}\)?[\s.-]?)?\d{2,4}[\s.-]?\d{2,4}(?:[\s.-]?\d{2,4})?"
+    r"|"
+    r"(?:(?:\+?1\s*(?:[.-]\s*)?)?(?:\(\s*([2-9]1[02-9]|[2-9][02-8]1|[2-9][02-8][02-9])\s*\)|([2-9]1[02-9]|[2-9][02-8]1|[2-9][02-8][02-9]))\s*(?:[.-]\s*)?)?([2-9]1[02-9]|[2-9][02-9]1|[2-9][02-9]{2})\s*(?:[.-]\s*)?([0-9]{4})(?:\s*(?:#|x\.?|ext\.?|extension)\s*(\d+))?"
+    r")",
     re.IGNORECASE,
 )
 
@@ -102,9 +107,11 @@ class PIISanitizer:
         self,
         enabled_types: Optional[Sequence[PIIType]] = None,
         default_strategy: RedactionStrategy = RedactionStrategy.REPLACE,
+        hmac_key: Optional[Union[str, bytes]] = None,
     ) -> None:
         self.enabled_types = set(enabled_types or list(PIIType))
         self.default_strategy = default_strategy
+        self.hmac_key = hmac_key
 
     def _generate_replacement(
         self,
@@ -116,7 +123,11 @@ class PIISanitizer:
             return f"[REDACTED_{entity_type.value.upper()}]"
 
         if strategy == RedactionStrategy.HASH:
-            digest = hashlib.sha256(raw_val.encode("utf-8")).hexdigest()[:8]
+            if self.hmac_key:
+                k = self.hmac_key.encode("utf-8") if isinstance(self.hmac_key, str) else self.hmac_key
+                digest = hmac.new(k, raw_val.encode("utf-8"), hashlib.sha256).hexdigest()[:8]
+            else:
+                digest = hashlib.sha256(raw_val.encode("utf-8")).hexdigest()[:8]
             return f"[HASH:{digest}]"
 
         if strategy == RedactionStrategy.MASK:
