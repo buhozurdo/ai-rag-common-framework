@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from common_framework._version import __version__
 from common_framework.core.config import Settings, get_settings
 from common_framework.core.exceptions import (
     AuthenticationError,
@@ -148,12 +149,14 @@ def setup_exception_handlers(app: FastAPI) -> None:
 
 def create_app(
     title: str = "AI Common Framework Service",
-    version: str = "0.4.0-alpha",
+    version: Optional[str] = None,
     description: str = "Production-ready REST and MCP service powered by AI RAG Common Framework.",
     cors_origins: Optional[Sequence[str]] = None,
     cors_methods: Optional[Sequence[str]] = None,
     cors_headers: Optional[Sequence[str]] = None,
     enable_healthcheck: bool = True,
+    include_metrics: bool = True,
+    enable_metrics: Optional[bool] = None,
     rag_engine: Optional[Any] = None,
     enable_rag_routes: bool = False,
     mcp_server: Optional[Any] = None,
@@ -165,10 +168,11 @@ def create_app(
 ) -> FastAPI:
     """Create and configure a production-ready FastAPI application."""
     active_settings = settings or get_settings()
+    app_version = version or __version__
 
     app = FastAPI(
         title=title,
-        version=version,
+        version=app_version,
         description=description,
         docs_url="/docs",
         redoc_url="/redoc",
@@ -208,7 +212,7 @@ def create_app(
         async def health_check() -> dict[str, Any]:
             return {
                 "status": "ok",
-                "version": version,
+                "version": app_version,
                 "env": active_settings.framework_env,
             }
 
@@ -219,6 +223,13 @@ def create_app(
                 "default_provider": active_settings.default_provider,
                 "default_model": active_settings.default_model,
             }
+
+    # Mount Prometheus metrics endpoint
+    metrics_enabled = include_metrics if enable_metrics is None else (include_metrics and enable_metrics)
+    if metrics_enabled:
+        from common_framework.observability.metrics import create_metrics_router
+
+        app.include_router(create_metrics_router())
 
     # Mount optional standard RAG routes
     if enable_rag_routes:

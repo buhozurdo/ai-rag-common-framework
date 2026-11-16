@@ -3,14 +3,14 @@
 > A lightweight, modular, zero-bloat foundation framework for building RAG systems, Model Context Protocol (MCP) servers, autonomous multi-agent workflows, and production AI microservices.
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/Version-v0.18.0%20(Stable)-brightgreen.svg)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/Tests-322%20passed%20(100%25)-success.svg)](tests/)
+[![Version](https://img.shields.io/badge/Version-v0.19.0%20(Stable)-brightgreen.svg)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/Tests-331%20passed%20(100%25)-success.svg)](tests/)
 [![Coverage](https://img.shields.io/badge/Coverage-91%25-brightgreen.svg)](tests/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
 
-## 🚀 Overview & Current Status: `v0.18.0` (Stable GA)
+## 🚀 Overview & Current Status: `v0.19.0` (Production Hardening & API Freeze)
 
 **AI RAG Common Framework** is engineered as a clean, idiomatic, and dependency-light standard library for modern AI engineering. It replaces sprawling, over-engineered stacks with composable, typed primitives that work seamlessly across asynchronous coroutines and synchronous pipelines.
 
@@ -347,7 +347,9 @@ ai-rag version
 
 ## 🧪 Running Tests & Quality Verification
 
-The test suite contains **322 unit, integration, and security tests** running with **91% global coverage**:
+The test harness executes **331 tests (100% passing)** with **91% global line coverage**:
+* **312 unit and regression tests** across 29 focused test modules in `tests/`
+* **19 enterprise end-to-end integration tests** across 5 test suites in `examples/enterprise/`
 
 ```bash
 # Run all unit tests

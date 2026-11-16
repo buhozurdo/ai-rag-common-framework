@@ -48,12 +48,24 @@ def _deterministic_mock_vector(dimension: int, text: str) -> tuple[float, ...]:
     if not text:
         return (0.0,) * dimension
 
-    # Generate deterministic vector based on MD5 and character codes
-    vec: list[float] = []
-    for i in range(dimension):
-        h = hashlib.sha256(f"{text}_{i}".encode("utf-8")).digest()
-        val = (int.from_bytes(h[:4], byteorder="big") / (2**32 - 1)) * 2.0 - 1.0
-        vec.append(val)
+    vec = [0.0] * dimension
+    cleaned = text.lower().strip()
+    words = cleaned.split()
+
+    # Word-level feature hashing
+    for w in words:
+        h = int(hashlib.md5(w.encode("utf-8")).hexdigest(), 16)
+        idx = h % dimension
+        sign = 1.0 if ((h >> 8) & 1) else -1.0
+        vec[idx] += 2.0 * sign
+
+    # Character n-gram feature hashing (3-grams) for subword similarity
+    for i in range(max(1, len(cleaned) - 2)):
+        ng = cleaned[i : i + 3]
+        h = int(hashlib.md5(ng.encode("utf-8")).hexdigest(), 16)
+        idx = h % dimension
+        sign = 1.0 if ((h >> 8) & 1) else -1.0
+        vec[idx] += 0.5 * sign
 
     # L2 normalize vector
     norm = math.sqrt(sum(x * x for x in vec))

@@ -25,6 +25,7 @@ class CostRecord(BaseModel):
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
+    cached_tokens: int = 0
     input_cost_usd: float
     output_cost_usd: float
     total_cost_usd: float
@@ -34,6 +35,14 @@ class CostRecord(BaseModel):
 
 # Standard reference pricing tables (USD per 1M tokens)
 DEFAULT_PRICING_TABLE: dict[str, ModelPricing] = {
+    # Google Gemini Models
+    "gemini-2.5-flash": ModelPricing(input_cost_per_million=0.15, output_cost_per_million=0.60, cached_input_cost_per_million=0.0375),
+    "gemini-2.0-flash": ModelPricing(input_cost_per_million=0.10, output_cost_per_million=0.40, cached_input_cost_per_million=0.025),
+    "gemini-1.5-flash": ModelPricing(input_cost_per_million=0.075, output_cost_per_million=0.30, cached_input_cost_per_million=0.01875),
+    "gemini-1.5-pro": ModelPricing(input_cost_per_million=1.25, output_cost_per_million=5.00, cached_input_cost_per_million=0.3125),
+    "gemini-2.5-pro": ModelPricing(input_cost_per_million=1.25, output_cost_per_million=5.00, cached_input_cost_per_million=0.3125),
+    "gemini-embedding": ModelPricing(input_cost_per_million=0.025, output_cost_per_million=0.0),
+    "text-embedding-004": ModelPricing(input_cost_per_million=0.025, output_cost_per_million=0.0),
     # OpenAI Models
     "gpt-4o": ModelPricing(input_cost_per_million=2.50, output_cost_per_million=10.00),
     "gpt-4o-mini": ModelPricing(input_cost_per_million=0.15, output_cost_per_million=0.60),
@@ -94,7 +103,14 @@ class TokenCostTracker:
     ) -> CostRecord:
         """Compute the dollar cost of a token usage payload without storing it."""
         pricing = self.get_pricing(model)
-        input_cost = (usage.prompt_tokens / 1_000_000.0) * pricing.input_cost_per_million
+        cached_tokens = getattr(usage, "cached_tokens", 0) or 0
+        regular_prompt = max(0, usage.prompt_tokens - cached_tokens)
+        cached_rate = (
+            pricing.cached_input_cost_per_million
+            if pricing.cached_input_cost_per_million is not None
+            else pricing.input_cost_per_million
+        )
+        input_cost = ((regular_prompt * pricing.input_cost_per_million) + (cached_tokens * cached_rate)) / 1_000_000.0
         output_cost = (usage.completion_tokens / 1_000_000.0) * pricing.output_cost_per_million
         total_cost = input_cost + output_cost
 
@@ -103,6 +119,7 @@ class TokenCostTracker:
             prompt_tokens=usage.prompt_tokens,
             completion_tokens=usage.completion_tokens,
             total_tokens=usage.total_tokens or (usage.prompt_tokens + usage.completion_tokens),
+            cached_tokens=cached_tokens,
             input_cost_usd=round(input_cost, 6),
             output_cost_usd=round(output_cost, 6),
             total_cost_usd=round(total_cost, 6),
@@ -177,3 +194,8 @@ class TokenCostTracker:
 
 # Global default tracker singleton
 global_cost_tracker = TokenCostTracker()
+
+
+def get_global_cost_tracker() -> TokenCostTracker:
+    """Return the framework global cost tracker singleton."""
+    return global_cost_tracker

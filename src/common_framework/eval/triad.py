@@ -29,11 +29,13 @@ class RAGTriadEvaluator:
         hallucination_detector: Optional[HallucinationDetector] = None,
         pass_threshold: float = 0.60,
         weights: Optional[tuple[float, float, float]] = None,
+        stopwords: Optional[set[str]] = None,
     ) -> None:
-        self.detector = hallucination_detector or HallucinationDetector()
+        self.detector = hallucination_detector or HallucinationDetector(stopwords=stopwords)
         self.pass_threshold = pass_threshold
         # Weights for (context_relevance, groundedness, answer_relevance)
         self.weights = weights or (0.30, 0.40, 0.30)
+        self.stopwords = set(stopwords) if stopwords is not None else getattr(self.detector, "stopwords", set(_STOP_WORDS))
 
     def _extract_context_text(
         self,
@@ -55,7 +57,7 @@ class RAGTriadEvaluator:
         if not all_q_tokens or not context_text:
             return 0.0
 
-        content_q = [t for t in all_q_tokens if t not in _STOP_WORDS]
+        content_q = [t for t in all_q_tokens if t not in self.stopwords]
         active_q = content_q if content_q else all_q_tokens
 
         ctx_lower = context_text.lower()
@@ -78,8 +80,8 @@ class RAGTriadEvaluator:
         if not all_q or not all_a:
             return 0.0
 
-        content_q = set(t for t in all_q if t not in _STOP_WORDS)
-        content_a = set(t for t in all_a if t not in _STOP_WORDS)
+        content_q = set(t for t in all_q if t not in self.stopwords)
+        content_a = set(t for t in all_a if t not in self.stopwords)
 
         active_q = content_q if content_q else set(all_q)
         active_a = content_a if content_a else set(all_a)

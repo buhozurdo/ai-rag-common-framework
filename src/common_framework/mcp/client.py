@@ -10,6 +10,7 @@ from contextlib import AsyncExitStack
 from typing import Any, Callable, Optional, Sequence, Union
 from pydantic import BaseModel, create_model
 
+from common_framework._version import __version__
 from common_framework.core.exceptions import (
     MCPClientError,
     MCPConnectionError,
@@ -100,7 +101,7 @@ class FrameworkMCPClient:
         url: Optional[str] = None,
         headers: Optional[dict[str, str]] = None,
         client_name: str = "ai-rag-common-framework-client",
-        client_version: str = "0.7.0",
+        client_version: Optional[str] = None,
         read_stream: Any = None,
         write_stream: Any = None,
     ) -> None:
@@ -110,7 +111,7 @@ class FrameworkMCPClient:
         self.url = url
         self.headers = headers or {}
         self.client_name = client_name
-        self.client_version = client_version
+        self.client_version = client_version or __version__
         self._read_stream = read_stream
         self._write_stream = write_stream
 
