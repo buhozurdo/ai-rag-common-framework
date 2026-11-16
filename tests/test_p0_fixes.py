@@ -41,20 +41,20 @@ from common_framework.rag.embeddings import _deterministic_mock_vector
 # ---------------------------------------------------------------------------
 def test_p0_version_alignment() -> None:
     """Verify that create_app, MCP server, and MCP client default to package __version__."""
-    assert __version__ == "0.19.0"
+    assert __version__ == common_framework.__version__
 
     app = create_app()
-    assert app.version == "0.19.0"
+    assert app.version == __version__
 
     client = TestClient(app)
     health = client.get("/healthz").json()
-    assert health["version"] == "0.19.0"
+    assert health["version"] == __version__
 
     mcp_srv = create_mcp_server()
-    assert mcp_srv.version == "0.19.0"
+    assert mcp_srv.version == __version__
 
     mcp_cli = create_mcp_client()
-    assert mcp_cli.client_version == "0.19.0"
+    assert mcp_cli.client_version == __version__
 
 
 # ---------------------------------------------------------------------------

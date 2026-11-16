@@ -4,6 +4,36 @@ All notable changes to this project are documented in this file following [Keep 
 
 ---
 
+## [v0.19.1] - 2026-11-16
+
+### Pull Request
+- **PR Title:** `release: v0.19.1 - CI/CD Pipeline Automation, Test Matrix Hardening & PyPI Publishing`
+- **PR Description:**
+  > ### Summary
+  > Releases `v0.19.1` delivering complete GitHub Actions CI/CD automation, automated PyPI package deployment via OIDC Trusted Publishing, SonarQube quality checks, Dependabot monitoring, and test matrix hardening for vector store matrix caching.
+  >
+  > ### Key Changes
+  > - **CI/CD Automation:** Added GitHub Actions workflows for continuous integration (`ci.yml`), PyPI deployment (`release.yml`), GitHub release asset publishing (`python-publish.yml`), and SonarQube analysis (`sonar.yml`).
+  > - **Dependabot Integration:** Added `.github/dependabot.yml` for automated weekly Python and Action dependency updates.
+  > - **Test Hardening & NumPy Support:** Added `numpy>=1.26.0` to `rag` and `test` optional dependencies in `pyproject.toml`, and guarded matrix cache tests with `@pytest.mark.skipif(not _HAS_NUMPY)`.
+  > - **Developer Experience:** Added `[dev]` optional dependency extra in `pyproject.toml`.
+  > - **Version Centralization:** Updated dynamic version tests in `test_p0_fixes.py` to reference `__version__`.
+  >
+  > ### Verification
+  > - `pytest tests/`: 312 unit tests + 19 integration tests passing (100%), 91% global coverage.
+
+### Added
+- **GitHub Actions Workflows:** Added `.github/workflows/ci.yml`, `release.yml`, `python-publish.yml`, and `sonar.yml`.
+- **Dependabot Configuration:** Added `.github/dependabot.yml`.
+- **SonarQube Properties:** Added `sonar-project.properties`.
+- **Optional Dependencies:** Added `dev` extra alias and `numpy>=1.26.0` to `rag` and `test` in `pyproject.toml`.
+
+### Fixed
+- **Vector Store Test Skip Guards:** Added `@pytest.mark.skipif(not _HAS_NUMPY)` to matrix cache test cases in `tests/test_vectorstore_perf.py`.
+- **Version Assertion Alignment:** Updated `tests/test_p0_fixes.py` to dynamically assert package `__version__`.
+
+---
+
 ## [v0.19.0] - 2026-11-15
 
 ### Pull Request
