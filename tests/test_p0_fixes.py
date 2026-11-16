@@ -247,6 +247,35 @@ def test_p0_api_freeze_deprecation_warning() -> None:
             details="Pass new_param directly",
         )
 
+    # Parameter deprecation without alternative and without details
+    with pytest.deprecated_call(match="bare_param.*is deprecated since v0.19.0"):
+        warn_deprecated_parameter("bare_param", since="0.19.0", removal_version="1.0.0")
+
+    # Parameter deprecation with details only
+    with pytest.deprecated_call(match="details_param.*Details: Extra context"):
+        warn_deprecated_parameter(
+            "details_param",
+            since="0.19.0",
+            removal_version="1.0.0",
+            details="Extra context",
+        )
+
+    # Function deprecation without alternative and without details
+    @deprecated(since="0.19.0", removal_version="1.0.0")
+    def bare_legacy_fn() -> str:
+        return "bare"
+
+    with pytest.deprecated_call(match="bare_legacy_fn.*deprecated since v0.19.0"):
+        assert bare_legacy_fn() == "bare"
+
+    # Function deprecation with details
+    @deprecated(since="0.19.0", removal_version="1.0.0", details="Function details")
+    def details_legacy_fn() -> str:
+        return "details"
+
+    with pytest.deprecated_call(match="details_legacy_fn.*Details: Function details"):
+        assert details_legacy_fn() == "details"
+
     # Class-level deprecation with details
     @deprecated(since="0.19.0", removal_version="1.0.0", alternative="ModernClass", details="Use ModernClass instead")
     class LegacyClass:
@@ -259,6 +288,16 @@ def test_p0_api_freeze_deprecation_warning() -> None:
     assert getattr(LegacyClass, "__deprecated__", False) is True
     assert getattr(LegacyClass, "__deprecated_since__", None) == "0.19.0"
     assert getattr(LegacyClass, "__deprecated_removal__", None) == "1.0.0"
+
+    # Class-level deprecation without alternative and without details
+    @deprecated(since="0.19.0", removal_version="1.0.0")
+    class BareLegacyClass:
+        def __init__(self, val: int):
+            self.val = val
+
+    with pytest.deprecated_call(match="BareLegacyClass.*deprecated since v0.19.0"):
+        bare_obj = BareLegacyClass(99)
+    assert bare_obj.val == 99
 
 
 # ---------------------------------------------------------------------------
