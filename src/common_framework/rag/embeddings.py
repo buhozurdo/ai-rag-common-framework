@@ -216,8 +216,9 @@ class EmbeddingFactory:
             # Gemini OpenAI-compatible endpoint supports text-embedding-004
             gemini_base = "https://generativelanguage.googleapis.com/v1beta/openai"
             target_model = model or "text-embedding-004"
+            gemini_key = kwargs.pop("api_key", None) or cfg.get_api_key_for_provider("gemini")
             return OpenAICompatibleEmbeddingProvider(
-                api_key=cfg.get_api_key_for_provider("gemini"),
+                api_key=gemini_key,
                 base_url=gemini_base,
                 model=target_model,
                 provider_name="gemini",

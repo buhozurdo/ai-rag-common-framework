@@ -19,6 +19,8 @@ async def test_embedding_factory_all_providers():
         openai_api_key="sk-openai-test",
         gemini_api_key="gemini-key-test",
         ollama_base_url="http://localhost:11434",
+        OPENAI_API_KEY="sk-openai-test",
+        GEMINI_API_KEY="gemini-key-test",
     )
 
     # 1. Mock provider
