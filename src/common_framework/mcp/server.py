@@ -5,7 +5,14 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Any, Callable, Optional, Union
-from mcp.server.mcpserver import MCPServer
+
+try:
+    from mcp.server.mcpserver import MCPServer
+except ImportError:
+    try:
+        from mcp.server import MCPServer  # type: ignore
+    except ImportError:  # pragma: no cover
+        MCPServer = None  # type: ignore
 
 from common_framework._version import __version__
 from common_framework.tools.base import Tool, tool
@@ -28,6 +35,13 @@ class FrameworkMCPServer:
         self.version = version or __version__
         self.instructions = instructions
         self.registry = tool_registry if tool_registry is not None else global_tool_registry
+
+        if MCPServer is None:
+            raise RuntimeError(
+                "The 'mcp' package (>=2.0.0) is required to run FrameworkMCPServer. "
+                "Install it with: pip install 'ai-rag-common-framework[mcp]'"
+            )
+
         self.underlying_server = MCPServer(
             name=self.name,
             version=self.version,
