@@ -53,6 +53,9 @@ test = [
 all = [
     "ai-rag-common-framework[mcp,api,rag,test]",
 ]
+dev = [
+    "ai-rag-common-framework[all]",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/common_framework"]
