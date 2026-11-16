@@ -78,9 +78,12 @@ def warn_deprecated_parameter(
     since: str,
     removal_version: str,
     alternative: Optional[str] = None,
+    details: Optional[str] = None,
 ) -> None:
     """Emit a deprecation warning for an obsolete parameter passed to a function."""
     msg = f"Parameter '{param_name}' is deprecated since v{since} and will be removed in v{removal_version}."
     if alternative:
         msg += f" Use parameter '{alternative}' instead."
+    if details:
+        msg += f" Details: {details}"
     warnings.warn(msg, category=FrameworkDeprecationWarning, stacklevel=3)

@@ -239,7 +239,26 @@ def test_p0_api_freeze_deprecation_warning() -> None:
     assert getattr(legacy_fn, "__deprecated_removal__", None) == "1.0.0"
 
     with pytest.deprecated_call(match="legacy_param"):
-        warn_deprecated_parameter("legacy_param", since="0.19.0", removal_version="1.0.0", alternative="new_param")
+        warn_deprecated_parameter(
+            "legacy_param",
+            since="0.19.0",
+            removal_version="1.0.0",
+            alternative="new_param",
+            details="Pass new_param directly",
+        )
+
+    # Class-level deprecation with details
+    @deprecated(since="0.19.0", removal_version="1.0.0", alternative="ModernClass", details="Use ModernClass instead")
+    class LegacyClass:
+        def __init__(self, val: int):
+            self.val = val
+
+    with pytest.deprecated_call(match="LegacyClass.*deprecated since v0.19.0.*Details: Use ModernClass instead"):
+        obj = LegacyClass(42)
+    assert obj.val == 42
+    assert getattr(LegacyClass, "__deprecated__", False) is True
+    assert getattr(LegacyClass, "__deprecated_since__", None) == "0.19.0"
+    assert getattr(LegacyClass, "__deprecated_removal__", None) == "1.0.0"
 
 
 # ---------------------------------------------------------------------------
