@@ -2,15 +2,16 @@
 
 > A lightweight, modular, zero-bloat foundation framework for building RAG systems, Model Context Protocol (MCP) servers, autonomous multi-agent workflows, and production AI microservices.
 
+[![PyPI](https://img.shields.io/pypi/v/ai-rag-common-framework.svg)](https://pypi.org/project/ai-rag-common-framework/)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/Version-v0.19.0%20(Stable)-brightgreen.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-v0.19.1%20(Stable)-brightgreen.svg)](CHANGELOG.md)
 [![Tests](https://img.shields.io/badge/Tests-331%20passed%20(100%25)-success.svg)](tests/)
 [![Coverage](https://img.shields.io/badge/Coverage-91%25-brightgreen.svg)](tests/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
 
-## 🚀 Overview & Current Status: `v0.19.0` (Production Hardening & API Freeze)
+## 🚀 Overview & Current Status: `v0.19.1` (Production CI/CD & API Freeze)
 
 **AI RAG Common Framework** is engineered as a clean, idiomatic, and dependency-light standard library for modern AI engineering. It replaces sprawling, over-engineered stacks with composable, typed primitives that work seamlessly across asynchronous coroutines and synchronous pipelines.
 
@@ -67,17 +68,36 @@
 
 ## 📦 Installation
 
-Install the package in editable mode locally:
+### From PyPI (Standard Release)
 
 ```bash
-pip install -e .
+pip install ai-rag-common-framework
 ```
 
-Or install with optional dependencies:
+Install with optional feature bundles:
 
 ```bash
-# With MCP protocol support and full test suite
-pip install -e ".[test,mcp]"
+# With FastAPI HTTP microservice gateway & Uvicorn
+pip install "ai-rag-common-framework[api]"
+
+# With Model Context Protocol (MCP) server & client
+pip install "ai-rag-common-framework[mcp]"
+
+# With PostgreSQL / pgvector & NumPy BLAS vector acceleration
+pip install "ai-rag-common-framework[rag]"
+
+# Full installation with all optional extensions
+pip install "ai-rag-common-framework[all]"
+```
+
+### Local Development Installation
+
+Clone the repository and install in editable mode:
+
+```bash
+git clone https://github.com/buhozurdo/ai-rag-common-framework.git
+cd ai-rag-common-framework
+pip install -e ".[dev]"
 ```
 
 ---
