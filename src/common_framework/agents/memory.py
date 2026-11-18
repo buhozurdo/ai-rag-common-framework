@@ -65,9 +65,12 @@ class ConversationBufferMemory(BaseMemory):
         has_system = len(self._messages) > 0 and self._messages[0].role == Role.SYSTEM
         if has_system:
             system_msg = self._messages[0]
-            # Keep system prompt + the last (max_messages - 1) messages
-            kept = self._messages[-(self.max_messages - 1) :]
-            self._messages = [system_msg] + kept
+            if self.max_messages <= 1:
+                self._messages = [system_msg]
+            else:
+                # Keep system prompt + the last (max_messages - 1) messages
+                kept = self._messages[-(self.max_messages - 1) :]
+                self._messages = [system_msg] + kept
         else:
             self._messages = self._messages[-self.max_messages :]
 
@@ -136,3 +139,11 @@ class VectorMemory(ConversationBufferMemory):
 
         snippets = [f"- {d.content.strip()}" for d in docs]
         return "\n".join(snippets)
+
+    async def clear(self) -> None:
+        """Clear both short-term conversational buffer and persistent vector memory."""
+        await super().clear()
+        if hasattr(self.vector_store, "clear"):
+            res = self.vector_store.clear(self.collection)
+            if asyncio.iscoroutine(res):
+                await res

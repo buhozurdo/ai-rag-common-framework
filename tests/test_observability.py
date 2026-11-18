@@ -99,6 +99,27 @@ def test_custom_pricing_registration():
     assert record.total_cost_usd == 3.0
 
 
+@pytest.mark.asyncio
+async def test_token_cost_ledger_concurrency_and_batch():
+    """Verify concurrent bursts and batch operations on TokenCostTracker."""
+    tracker = TokenCostTracker()
+    usage = TokenUsage(prompt_tokens=100, completion_tokens=50, total_tokens=150)
+
+    # 1. 250 concurrent async record_usage operations
+    tasks = [tracker.record_usage("gpt-4o", usage) for _ in range(250)]
+    records = await asyncio.gather(*tasks)
+    assert len(records) == 250
+
+    # 2. Batch recording
+    batch_items = [("gpt-4o", usage, {"batch": True}) for _ in range(50)]
+    batch_records = tracker.record_usage_batch(batch_items)
+    assert len(batch_records) == 50
+
+    summary = await tracker.get_summary()
+    assert summary["total_invocations"] == 300
+    assert summary["total_tokens"] == 300 * 150
+
+
 # ---------------------------------------------------------------------------
 # Prometheus Metrics Tests (FEAT-08)
 # ---------------------------------------------------------------------------

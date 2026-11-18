@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 from pydantic import BaseModel, Field
 
 from common_framework.core.llm import TokenUsage
@@ -114,7 +114,7 @@ class TokenCostTracker:
         output_cost = (usage.completion_tokens / 1_000_000.0) * pricing.output_cost_per_million
         total_cost = input_cost + output_cost
 
-        return CostRecord(
+        return CostRecord.model_construct(
             model=model,
             prompt_tokens=usage.prompt_tokens,
             completion_tokens=usage.completion_tokens,
@@ -124,6 +124,7 @@ class TokenCostTracker:
             output_cost_usd=round(output_cost, 6),
             total_cost_usd=round(total_cost, 6),
             metadata=dict(metadata or {}),
+            timestamp=datetime.now(timezone.utc),
         )
 
     async def record_usage(
@@ -134,8 +135,8 @@ class TokenCostTracker:
     ) -> CostRecord:
         """Compute dollar cost and record invocation into historical ledger."""
         record = self.calculate_cost(model, usage, metadata=metadata)
-        async with self._lock:
-            self._records.append(record)
+        # Lock acquisition is bypassed on append to avoid contention bottlenecks during concurrent bursts.
+        self._records.append(record)
         return record
 
     def record_usage_sync(
@@ -148,6 +149,25 @@ class TokenCostTracker:
         record = self.calculate_cost(model, usage, metadata=metadata)
         self._records.append(record)
         return record
+
+    def record_usage_batch(
+        self,
+        items: Sequence[tuple[str, TokenUsage, Optional[dict[str, Any]]]],
+    ) -> list[CostRecord]:
+        """Record multiple token usages in a single lock-free batch."""
+        records = [
+            self.calculate_cost(model, usage, metadata)
+            for model, usage, metadata in items
+        ]
+        self._records.extend(records)
+        return records
+
+    async def record_usage_batch_async(
+        self,
+        items: Sequence[tuple[str, TokenUsage, Optional[dict[str, Any]]]],
+    ) -> list[CostRecord]:
+        """Asynchronous batch recording wrapper."""
+        return self.record_usage_batch(items)
 
     async def get_summary(
         self,

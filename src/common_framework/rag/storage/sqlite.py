@@ -113,6 +113,8 @@ class SQLiteVectorStore(BaseVectorStore):
             try:
                 self._conn.execute("PRAGMA journal_mode = WAL;")
                 self._conn.execute("PRAGMA synchronous = NORMAL;")
+                self._conn.execute("PRAGMA cache_size = -2000;")  # Exact 2048 KiB SQLite page cache budget
+                self._conn.execute("PRAGMA temp_store = MEMORY;")
             except sqlite3.OperationalError:
                 pass
 
@@ -208,44 +210,68 @@ class SQLiteVectorStore(BaseVectorStore):
         if not query_embedding:
             return []
 
-        cursor = self._conn.execute(
-            """
-            SELECT id, content, metadata, embedding, dim
-            FROM documents
-            WHERE collection = ? AND embedding IS NOT NULL
-            """,
-            (collection,),
-        )
-        rows = cursor.fetchall()
-        if not rows:
-            return []
+        # Optimization: Deferred content fetching.
+        # Fetching vectors and metadata first avoids loading megabytes of text
+        # for thousands of documents that won't make the top_k cut.
+        if filter_metadata:
+            cursor = self._conn.execute(
+                """
+                SELECT id, metadata, embedding, dim
+                FROM documents
+                WHERE collection = ? AND embedding IS NOT NULL
+                """,
+                (collection,),
+            )
+            raw_rows = cursor.fetchall()
+            if not raw_rows:
+                return []
+
+            filtered_rows: list[tuple[str, dict[str, Any], bytes, int]] = []
+            for doc_id, meta_json, blob, dim in raw_rows:
+                meta = json.loads(meta_json)
+                if all(meta.get(k) == v for k, v in filter_metadata.items()):
+                    filtered_rows.append((doc_id, meta, blob, dim))
+
+            if not filtered_rows:
+                return []
+
+            candidate_ids = [r[0] for r in filtered_rows]
+            candidate_meta = {r[0]: r[1] for r in filtered_rows}
+            candidate_blobs = [r[2] for r in filtered_rows]
+            dims = [r[3] for r in filtered_rows]
+        else:
+            cursor = self._conn.execute(
+                """
+                SELECT id, embedding, dim
+                FROM documents
+                WHERE collection = ? AND embedding IS NOT NULL
+                """,
+                (collection,),
+            )
+            raw_rows = cursor.fetchall()
+            if not raw_rows:
+                return []
+
+            candidate_ids = [r[0] for r in raw_rows]
+            candidate_meta = {}
+            candidate_blobs = [r[1] for r in raw_rows]
+            dims = [r[2] for r in raw_rows]
 
         # Validate vector dimensions against stored documents
-        first_dim = rows[0][4]
+        first_dim = dims[0]
         if first_dim is not None and len(query_embedding) != first_dim:
             raise ValueError(
                 f"Vector dimension mismatch: query vector has {len(query_embedding)} dims, document has {first_dim} dims"
             )
 
-        # Filter by metadata if requested
-        filtered_rows: list[tuple[str, str, dict[str, Any], bytes, int]] = []
-        for r in rows:
-            doc_id, content, meta_json, blob, dim = r
-            meta = json.loads(meta_json)
-            if filter_metadata:
-                if not all(meta.get(k) == v for k, v in filter_metadata.items()):
-                    continue
-            filtered_rows.append((doc_id, content, meta, blob, dim))
-
-        if not filtered_rows:
-            return []
+        num_candidates = len(candidate_ids)
 
         # Fast path: NumPy BLAS matrix GEMV multiplication
         if self.use_numpy and np is not None:
-            dim = filtered_rows[0][4]
-            raw_matrix = np.frombuffer(
-                b"".join(r[3] for r in filtered_rows), dtype=np.float32
-            ).reshape(len(filtered_rows), dim)
+            dim = first_dim
+            raw_matrix = np.empty((num_candidates, dim), dtype=np.float32)
+            for i, blob in enumerate(candidate_blobs):
+                raw_matrix[i] = np.frombuffer(blob, dtype=np.float32)
 
             norms = np.linalg.norm(raw_matrix, axis=1, keepdims=True)
             norms[norms == 0.0] = 1.0
@@ -266,30 +292,50 @@ class SQLiteVectorStore(BaseVectorStore):
                 part = np.argpartition(scores, -top_k)[-top_k:]
                 top_indices = part[np.argsort(scores[part])[::-1]]
 
-            return [
-                SearchResult(
-                    document=Document(
-                        id=filtered_rows[i][0],
-                        content=filtered_rows[i][1],
-                        metadata=filtered_rows[i][2],
-                        embedding=_unpack_vector(filtered_rows[i][3], dim),
-                    ),
-                    score=float(scores[i]),
-                )
-                for i in top_indices
-            ]
+            winning_ids = [candidate_ids[i] for i in top_indices]
+            winning_scores = [float(scores[i]) for i in top_indices]
+            winning_blobs = [candidate_blobs[i] for i in top_indices]
+        else:
+            # Pure Python fallback
+            scored: list[tuple[float, int]] = []
+            for i, blob in enumerate(candidate_blobs):
+                emb = _unpack_vector(blob, dims[i])
+                score = cosine_similarity(query_embedding, emb)
+                scored.append((score, i))
 
-        # Pure Python fallback
-        scored: list[tuple[float, Document]] = []
-        for r in filtered_rows:
-            dim = r[4]
-            emb = _unpack_vector(r[3], dim)
-            score = cosine_similarity(query_embedding, emb)
-            doc = Document(id=r[0], content=r[1], metadata=r[2], embedding=emb)
-            scored.append((score, doc))
+            scored.sort(key=lambda x: x[0], reverse=True)
+            top_scored = scored[:top_k]
+            winning_ids = [candidate_ids[i] for _, i in top_scored]
+            winning_scores = [score for score, _ in top_scored]
+            winning_blobs = [candidate_blobs[i] for _, i in top_scored]
 
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return [SearchResult(document=doc, score=score) for score, doc in scored[:top_k]]
+        if not winning_ids:
+            return []
+
+        # Deferred fetch: Load content and metadata ONLY for the winning top-k documents
+        placeholders = ",".join("?" for _ in winning_ids)
+        content_cursor = self._conn.execute(
+            f"""
+            SELECT id, content, metadata
+            FROM documents
+            WHERE collection = ? AND id IN ({placeholders})
+            """,
+            (collection, *winning_ids),
+        )
+        content_map = {row[0]: (row[1], json.loads(row[2])) for row in content_cursor.fetchall()}
+
+        results: list[SearchResult] = []
+        for doc_id, score, blob in zip(winning_ids, winning_scores, winning_blobs):
+            content, meta = content_map.get(doc_id, ("", candidate_meta.get(doc_id, {})))
+            doc = Document(
+                id=doc_id,
+                content=content,
+                metadata=meta,
+                embedding=_unpack_vector(blob, first_dim),
+            )
+            results.append(SearchResult(document=doc, score=score))
+
+        return results
 
     async def similarity_search(
         self,

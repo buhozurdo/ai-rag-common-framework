@@ -25,6 +25,15 @@ from common_framework.rag.vectorstore import (
 )
 
 from common_framework.rag.storage.sqlite import SQLiteVectorStore
+from common_framework.rag.loaders import (
+    BaseLoader,
+    CSVLoader,
+    DirectoryLoader,
+    HTMLLoader,
+    MarkdownLoader,
+    PDFLoader,
+    TextLoader,
+)
 from common_framework.rag.strategies import (
     BaseRetrievalStrategy,
     HyDEStrategy,
@@ -59,4 +68,11 @@ __all__ = [
     "MultiQueryStrategy",
     "HyDEStrategy",
     "multi_list_rrf",
+    "BaseLoader",
+    "TextLoader",
+    "MarkdownLoader",
+    "CSVLoader",
+    "HTMLLoader",
+    "DirectoryLoader",
+    "PDFLoader",
 ]

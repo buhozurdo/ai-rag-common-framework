@@ -45,10 +45,10 @@ class ToolRegistry:
         """Return all registered tools as an array of OpenAI function definitions."""
         return [t.to_openai_schema() for t in self._tools.values()]
 
-    async def execute(self, tool_name: str, **kwargs: Any) -> Any:
+    async def execute(self, tool_name: str, *, approved: bool = False, **kwargs: Any) -> Any:
         """Execute a registered tool by name with provided arguments."""
         t = self.get(tool_name)
-        return await t.execute(**kwargs)
+        return await t.execute(approved=approved, **kwargs)
 
     def __contains__(self, name: str) -> bool:
         return name in self._tools

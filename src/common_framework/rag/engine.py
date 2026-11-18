@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import hashlib
+import json
 import logging
+import xml.sax.saxutils
 from typing import Any, AsyncIterator, Iterable, Optional, TYPE_CHECKING, Union
 
 from common_framework.core.llm import (
@@ -113,6 +116,16 @@ class RAGEngine:
             docs.append(Document(content=text, metadata=meta))
         return await self.ingest_documents(docs, collection=collection, splitter=splitter)
 
+    async def ingest_loader(
+        self,
+        loader: Any,
+        collection: str = "default",
+        splitter: Optional[BaseTextSplitter] = None,
+    ) -> list[str]:
+        """Ingest documents from a BaseLoader instance into the specified collection."""
+        docs = loader.load()
+        return await self.ingest_documents(docs, collection=collection, splitter=splitter)
+
     async def retrieve(
         self,
         query: str,
@@ -169,9 +182,18 @@ class RAGEngine:
         chunks = ["<context>"]
         for r in results:
             doc_id = r.document.metadata.get("parent_id", r.document.id)
-            chunks.append(f'<document id="{doc_id}">\n{r.document.content}\n</document>')
+            safe_id = xml.sax.saxutils.escape(str(doc_id))
+            safe_content = xml.sax.saxutils.escape(r.document.content)
+            chunks.append(f'<document id="{safe_id}">\n{safe_content}\n</document>')
         chunks.append("</context>")
         return "\n".join(chunks)
+
+    def _compute_cache_namespace(self, collection: str, filter_metadata: Optional[dict[str, Any]]) -> str:
+        if not filter_metadata:
+            return collection
+        filt_str = json.dumps(filter_metadata, sort_keys=True, default=str)
+        filt_hash = hashlib.sha256(filt_str.encode()).hexdigest()[:8]
+        return f"{collection}:{filt_hash}"
 
     async def query(
         self,
@@ -187,8 +209,9 @@ class RAGEngine:
         **kwargs: Any,
     ) -> RAGResponse:
         """Retrieve relevant context and synthesize an answer using the LLM."""
+        cache_namespace = self._compute_cache_namespace(collection, filter_metadata)
         if self.cache is not None:
-            hit = await self.cache.get(query=query, namespace=collection)
+            hit = await self.cache.get(query=query, namespace=cache_namespace)
             if hit is not None:
                 if isinstance(hit.response, RAGResponse):
                     return RAGResponse(
@@ -245,7 +268,7 @@ class RAGEngine:
             await self.cache.set(
                 query=query,
                 response=rag_response,
-                namespace=collection,
+                namespace=cache_namespace,
                 metadata={"model": rag_response.model},
             )
 
@@ -265,8 +288,9 @@ class RAGEngine:
         **kwargs: Any,
     ) -> AsyncIterator[ChatStreamChunk]:
         """Retrieve relevant context and stream the synthesized answer token-by-token."""
+        cache_namespace = self._compute_cache_namespace(collection, filter_metadata)
         if self.cache is not None:
-            hit = await self.cache.get(query=query, namespace=collection)
+            hit = await self.cache.get(query=query, namespace=cache_namespace)
             if hit is not None:
                 content = hit.response.answer if isinstance(hit.response, RAGResponse) else str(hit.response)
                 yield ChatStreamChunk(
@@ -320,7 +344,7 @@ class RAGEngine:
             await self.cache.set(
                 query=query,
                 response=full_response,
-                namespace=collection,
+                namespace=cache_namespace,
                 metadata={"model": full_response.model},
             )
 

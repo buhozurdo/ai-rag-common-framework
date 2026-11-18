@@ -74,6 +74,12 @@ class PrometheusRegistry:
         # Semantic Cache Metrics
         self.register("rag_semantic_cache_hits_total", "Count of cache hits in SemanticCache", "counter")
         self.register("rag_semantic_cache_misses_total", "Count of cache misses in SemanticCache", "counter")
+        self.register("rag_semantic_cache_bytes_total", "Total memory bytes consumed by SemanticCache", "gauge")
+
+        # Memory & Byte Accounting Metrics
+        self.register("rag_memory_allocated_bytes", "Exact bytes allocated per operation and category", "gauge")
+        self.register("rag_memory_peak_bytes", "Peak memory bytes observed during operation", "gauge")
+        self.register("rag_vectorstore_bytes_total", "Total disk/memory bytes occupied by vectorstore", "gauge")
 
     def register(self, name: str, docstring: str, metric_type: str = "counter") -> MetricFamily:
         with self._lock:

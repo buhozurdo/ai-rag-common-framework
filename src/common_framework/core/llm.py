@@ -181,6 +181,7 @@ class OpenAICompatibleClient(BaseLLMClient):
         provider_name: str = "openai",
         settings: Optional[Settings] = None,
         client: Optional[httpx.AsyncClient] = None,
+        **kwargs: Any,
     ) -> None:
         super().__init__(settings)
         self.provider_name = provider_name
@@ -196,8 +197,18 @@ class OpenAICompatibleClient(BaseLLMClient):
         """Return the active HTTP client: external injection or internal persistent pool."""
         if self._external_client is not None:
             return self._external_client
-        if self._internal_client is None or self._internal_client.is_closed:
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+
+        if (
+            self._internal_client is None
+            or self._internal_client.is_closed
+            or getattr(self, "_bound_loop", None) is not current_loop
+        ):
             self._internal_client = httpx.AsyncClient(timeout=self.settings.default_timeout_seconds)
+            self._bound_loop = current_loop
         return self._internal_client
 
     async def aclose(self) -> None:
@@ -402,11 +413,14 @@ class OpenAICompatibleClient(BaseLLMClient):
             "stream": True,
             **kwargs,
         }
+        if "stream_options" not in payload:
+            payload["stream_options"] = {"include_usage": True}
 
         url = f"{self.base_url}/chat/completions"
         headers = self._get_headers()
 
         async def _stream(http_client: httpx.AsyncClient) -> AsyncIterator[ChatStreamChunk]:
+            accumulated_usage: Optional[TokenUsage] = None
             try:
                 async with http_client.stream(
                     "POST",
@@ -438,21 +452,23 @@ class OpenAICompatibleClient(BaseLLMClient):
                             continue
 
                         choices = chunk_data.get("choices") or []
+                        chunk_model = chunk_data.get("model", target_model)
+
+                        usage = None
+                        if "usage" in chunk_data and chunk_data["usage"]:
+                            u = chunk_data["usage"]
+                            usage = TokenUsage(
+                                prompt_tokens=u.get("prompt_tokens", 0),
+                                completion_tokens=u.get("completion_tokens", 0),
+                                total_tokens=u.get("total_tokens", 0),
+                            )
+                            accumulated_usage = usage
+
                         if choices:
                             choice = choices[0]
                             delta_obj = choice.get("delta") or {}
                             content_piece = delta_obj.get("content") or ""
                             finish_reason = choice.get("finish_reason")
-                            chunk_model = chunk_data.get("model", target_model)
-
-                            usage = None
-                            if "usage" in chunk_data and chunk_data["usage"]:
-                                u = chunk_data["usage"]
-                                usage = TokenUsage(
-                                    prompt_tokens=u.get("prompt_tokens", 0),
-                                    completion_tokens=u.get("completion_tokens", 0),
-                                    total_tokens=u.get("total_tokens", 0),
-                                )
 
                             yield ChatStreamChunk(
                                 delta=content_piece,
@@ -460,11 +476,23 @@ class OpenAICompatibleClient(BaseLLMClient):
                                 finish_reason=finish_reason,
                                 usage=usage,
                             )
+                        elif usage:
+                            # Stream usage-only chunk
+                            yield ChatStreamChunk(
+                                delta="",
+                                model=chunk_model,
+                                usage=usage,
+                            )
             except httpx.RequestError as exc:
                 raise LLMProviderError(
                     f"Network error streaming from {self.provider_name}: {exc}",
                     provider=self.provider_name,
                 ) from exc
+            finally:
+                if accumulated_usage:
+                    self._record_cost_if_enabled(
+                        ChatResponse(content="", model=target_model, usage=accumulated_usage)
+                    )
 
         async for chunk in _stream(self._get_client()):
             yield chunk
@@ -479,17 +507,19 @@ class GeminiClient(OpenAICompatibleClient):
         api_key: Optional[Union[str, SecretStr]] = None,
         settings: Optional[Settings] = None,
         client: Optional[httpx.AsyncClient] = None,
+        **kwargs: Any,
     ) -> None:
         active_settings = settings or get_settings()
         key = api_key or active_settings.get_api_key_for_provider("gemini")
         # Gemini provides a direct OpenAI-compatible endpoint
-        gemini_base = "https://generativelanguage.googleapis.com/v1beta/openai"
+        gemini_base = kwargs.pop("base_url", None) or "https://generativelanguage.googleapis.com/v1beta/openai"
         super().__init__(
             api_key=key,
             base_url=gemini_base,
             provider_name="gemini",
             settings=active_settings,
             client=client,
+            **kwargs,
         )
 
 
@@ -501,6 +531,7 @@ class OllamaClient(OpenAICompatibleClient):
         base_url: Optional[str] = None,
         settings: Optional[Settings] = None,
         client: Optional[httpx.AsyncClient] = None,
+        **kwargs: Any,
     ) -> None:
         active_settings = settings or get_settings()
         root_url = (base_url or active_settings.ollama_base_url).rstrip("/")
@@ -511,6 +542,7 @@ class OllamaClient(OpenAICompatibleClient):
             provider_name="ollama",
             settings=active_settings,
             client=client,
+            **kwargs,
         )
 
 
@@ -523,6 +555,7 @@ class AnthropicClient(BaseLLMClient):
         base_url: Optional[str] = None,
         settings: Optional[Settings] = None,
         client: Optional[httpx.AsyncClient] = None,
+        **kwargs: Any,
     ) -> None:
         super().__init__(settings=settings)
         raw_key = api_key or self.settings.get_api_key_for_provider("anthropic")
@@ -539,8 +572,18 @@ class AnthropicClient(BaseLLMClient):
         """Return the active HTTP client: external injection or internal persistent pool."""
         if self._external_client is not None:
             return self._external_client
-        if self._internal_client is None or self._internal_client.is_closed:
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            current_loop = None
+
+        if (
+            self._internal_client is None
+            or self._internal_client.is_closed
+            or getattr(self, "_bound_loop", None) is not current_loop
+        ):
             self._internal_client = httpx.AsyncClient(timeout=self.settings.default_timeout_seconds)
+            self._bound_loop = current_loop
         return self._internal_client
 
     async def aclose(self) -> None:
@@ -800,6 +843,8 @@ class AnthropicClient(BaseLLMClient):
         headers = self._get_headers()
 
         async def _stream(http_client: httpx.AsyncClient) -> AsyncIterator[ChatStreamChunk]:
+            prompt_tokens = 0
+            completion_tokens = 0
             try:
                 async with http_client.stream(
                     "POST",
@@ -829,7 +874,11 @@ class AnthropicClient(BaseLLMClient):
                             continue
 
                         event_type = event_data.get("type")
-                        if event_type == "content_block_delta":
+                        if event_type == "message_start":
+                            message_obj = event_data.get("message") or {}
+                            usage_obj = message_obj.get("usage") or {}
+                            prompt_tokens = usage_obj.get("input_tokens", 0)
+                        elif event_type == "content_block_delta":
                             delta_obj = event_data.get("delta") or {}
                             text_piece = delta_obj.get("text") or ""
                             yield ChatStreamChunk(delta=text_piece, model=target_model)
@@ -839,19 +888,41 @@ class AnthropicClient(BaseLLMClient):
                             usage = None
                             if "usage" in event_data and event_data["usage"]:
                                 u = event_data["usage"]
-                                out_toks = u.get("output_tokens", 0)
-                                usage = TokenUsage(completion_tokens=out_toks, total_tokens=out_toks)
+                                completion_tokens = u.get("output_tokens", 0)
+                                total_toks = prompt_tokens + completion_tokens
+                                usage = TokenUsage(
+                                    prompt_tokens=prompt_tokens,
+                                    completion_tokens=completion_tokens,
+                                    total_tokens=total_toks,
+                                )
                             yield ChatStreamChunk(
                                 delta="",
                                 model=target_model,
                                 finish_reason=stop_reason,
                                 usage=usage,
                             )
+                        elif event_type == "error":
+                            err_info = event_data.get("error") or {}
+                            err_msg = err_info.get("message") or str(err_info)
+                            raise LLMProviderError(
+                                f"Anthropic streaming mid-stream error: {err_msg}",
+                                provider="anthropic",
+                            )
             except httpx.RequestError as exc:
                 raise LLMProviderError(
                     f"Network error streaming from Anthropic: {exc}",
                     provider="anthropic",
                 ) from exc
+            finally:
+                if prompt_tokens > 0 or completion_tokens > 0:
+                    final_usage = TokenUsage(
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        total_tokens=prompt_tokens + completion_tokens,
+                    )
+                    self._record_cost_if_enabled(
+                        ChatResponse(content="", model=target_model, usage=final_usage)
+                    )
 
         async for chunk in _stream(self._get_client()):
             yield chunk
@@ -1128,12 +1199,32 @@ class LLMFactory:
             return AnthropicClient(settings=cfg, client=client, **kwargs)
         if target_provider == "ollama":
             return OllamaClient(settings=cfg, client=client, **kwargs)
+        if target_provider in ("deepseek", "groq", "vllm"):
+            default_urls = {
+                "deepseek": "https://api.deepseek.com",
+                "groq": "https://api.groq.com/openai/v1",
+                "vllm": "http://localhost:8000/v1",
+            }
+            base_url = kwargs.pop("base_url", None) or getattr(cfg, f"{target_provider}_base_url", default_urls[target_provider])
+            api_key = kwargs.pop("api_key", None)
+            if not api_key:
+                if target_provider == "vllm":
+                    api_key = "vllm"
+                else:
+                    api_key = cfg.get_api_key_for_provider(target_provider) or "none"
+            return OpenAICompatibleClient(
+                provider_name=target_provider,
+                base_url=base_url,
+                api_key=api_key,
+                settings=cfg,
+                client=client,
+            )
         if target_provider in ("custom", "generic"):
             return OpenAICompatibleClient(provider_name="custom", settings=cfg, client=client, **kwargs)
 
         raise ConfigurationError(
             f"Unsupported LLM provider: {target_provider!r}. "
-            "Supported providers: 'gemini', 'openai', 'anthropic', 'ollama', 'custom'."
+            "Supported providers: 'gemini', 'openai', 'anthropic', 'ollama', 'deepseek', 'groq', 'vllm', 'custom'."
         )
 
     @staticmethod

@@ -40,7 +40,11 @@ class MCPAuthMiddleware:
             )
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
-        if scope["type"] != "http":
+        if scope["type"] == "lifespan":
+            await self.app(scope, receive, send)
+            return
+
+        if scope["type"] not in ("http", "websocket"):
             await self.app(scope, receive, send)
             return
 
@@ -63,6 +67,10 @@ class MCPAuthMiddleware:
                 provided_key = parsed["api_key"][0]
 
         if not provided_key or not hmac.compare_digest(provided_key, self.expected_api_key):
+            if scope["type"] == "websocket":
+                await send({"type": "websocket.close", "code": 4401, "reason": "Unauthorized MCP connection"})
+                return
+
             response_body = json.dumps(
                 {
                     "error": "unauthorized",
@@ -99,6 +107,7 @@ def mount_mcp_to_fastapi(
     api_key: Optional[str] = None,
     allow_query_param_auth: bool = False,
     disable_dns_protection: bool = False,
+    enforce_auth: bool = False,
 ) -> None:
     """Mount a FrameworkMCPServer as an SSE ASGI sub-application into FastAPI.
 
@@ -109,7 +118,17 @@ def mount_mcp_to_fastapi(
         api_key: Optional secret key required to access the MCP endpoints.
         allow_query_param_auth: Whether to accept ?api_key= query parameter (useful for EventSource).
         disable_dns_protection: Set to True to disable DNS rebinding protection (default: False).
+        enforce_auth: Whether to strictly mandate api_key configuration.
     """
+    if enforce_auth and not api_key:
+        raise ValueError("MCP authentication enforcement is active: 'api_key' must be provided.")
+    if not api_key:
+        logger.warning(
+            "mount_mcp_to_fastapi: MCP server '%s' is being mounted without an api_key! "
+            "All registered MCP tools and prompts are publicly accessible without authentication.",
+            mcp_server.name,
+        )
+
     normalized_prefix = "/" + prefix.strip("/")
     sse_app = mcp_server.get_sse_app(disable_dns_protection=disable_dns_protection)
 

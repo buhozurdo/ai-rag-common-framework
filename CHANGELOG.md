@@ -4,6 +4,86 @@ All notable changes to this project are documented in this file following [Keep 
 
 ---
 
+## [v0.19.3] - 2026-11-17
+
+### Pull Request
+- **PR Title:** `release: v0.19.3 - SLA Benchmark Performance Optimization (Guardrails Fast-Path & Lock-Free Cost Ledger)`
+- **PR Description:**
+  > ### Summary
+  > Releases `v0.19.3` delivering high-throughput performance optimizations and SLA window compliance for batch guardrail evaluation and concurrent token cost accounting.
+  >
+  > ### Key Changes
+  > - **PII & Guardrails Fast-Path Pre-filtering:** Added ultra-fast character and substring trigger pre-filters before firing complex regex patterns in `PIISanitizer` and `PromptGuardrail`. Avoids evaluating expensive phone, credit card, and SSN regexes when text lacks required digit counts, and skips injection regex evaluation when no adversarial triggers are present.
+  > - **Batch Evaluation APIs:** Introduced `PromptGuardrail.evaluate_batch()` and `PIISanitizer.sanitize_batch()`, cutting evaluation time on 250 realistic prompts from 60.57ms to 14.72ms (>4.1x speedup).
+  > - **Lock-Free Token Ledger Concurrency:** Removed `asyncio.Lock` acquisition bottleneck from the critical path of `TokenCostTracker.record_usage()`, leveraging atomic bytecode list appending to eliminate lock contention during concurrent bursts of 250+ requests.
+  > - **Lightweight CostRecord Allocation:** Replaced full Pydantic validation on every record insertion with `CostRecord.model_construct()`, significantly reducing CPU overhead and memory churn.
+  > - **Batch Token Usage Recording:** Added `TokenCostTracker.record_usage_batch()` and `record_usage_batch_async()` for single-pass ledger ingestion.
+  >
+  > ### Verification
+  > - `pytest tests/`: 358 passed, 1 skipped (100% pass rate) in 9.91s.
+  > - Benchmark: `guardrails_and_pii_batch_250_prompts` executed in 14.72ms (under SLA window).
+  > - Benchmark: `token_cost_ledger_concurrency_250_ops` executed in 2.30ms with zero lock contention.
+
+### Added
+- **Batch Processing Methods:** `PromptGuardrail.evaluate_batch()` and `PIISanitizer.sanitize_batch()`.
+- **Batch Cost Ingestion:** `TokenCostTracker.record_usage_batch()` and `TokenCostTracker.record_usage_batch_async()`.
+- **Targeted Test Suites:** `test_guardrail_and_pii_batch_processing()` in `tests/test_guardrails.py` and `test_token_cost_ledger_concurrency_and_batch()` in `tests/test_observability.py`.
+
+### Changed
+- **Version Bump:** `0.19.2` -> `0.19.3`.
+- **Pre-filtering Optimization:** In `src/common_framework/guardrails/sanitizer.py`, numeric PII checks (SSN, credit card, phone) exit early based on fast digit counting, email checks require `@`, and IPv4 checks require `.` and digits.
+- **Adversarial Pre-filtering:** In `src/common_framework/guardrails/moderation.py`, regex evaluation is gated by `_INJECTION_FAST_TRIGGERS`.
+- **Non-blocking Token Accounting:** In `src/common_framework/observability/cost.py`, `record_usage()` appends records atomically without `async with self._lock:`, using `CostRecord.model_construct()` for allocation speed.
+
+---
+
+## [v0.19.2] - 2026-11-17
+
+### Pull Request
+- **PR Title:** `release: v0.19.2 - Critical Security Remediation, CI Hardening & Enterprise Audit Fixes`
+- **PR Description:**
+  > ### Summary
+  > Releases `v0.19.2` providing critical security fixes, runtime authorization hardening, test suite expansions, and CI/CD release pipeline consolidation based on the comprehensive enterprise multi-agent audit.
+  >
+  > ### Key Changes
+  > - **SSRF Protection Hardening (BUG-13 / P0-1, P0-15):** Implemented active DNS resolution via `socket.getaddrinfo` to defeat DNS rebinding attacks (e.g., `*.nip.io` pointing to metadata services); enforced strict blocking of loopback (`127.0.0.0/8`, `::1`), private networks (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), link-local/carrier-grade NAT, and unmapped IPv4-mapped IPv6 addresses.
+  > - **CodeInterpreter AST Security Sandboxing (BUG-14 / P0-9):** Introduced static AST security policy (`safe_mode=True` by default) in `CodeInterpreter`, strictly blocking unauthorized process primitives (`os.system`, `os.popen`, `subprocess`, `pty`, `multiprocessing`, `ctypes`, and `socket`).
+  > - **MCP Server Authentication & Scope Guards (BUG-15 / P0-10):** Enforced authentication guards across all ASGI scope types (including WebSockets with `4401` close code) and added `enforce_auth` configuration on `mount_mcp_to_fastapi`.
+  > - **Prompt Guardrail Normalization (BUG-16 / P0-11):** Integrated Unicode NFKC normalization and invisible zero-width character stripping (`\u200b-\u200d\ufeff\u00ad\u2060`) to defeat homoglyph and obfuscation evasions; added detection for modern chat template delimiters (`<|im_start|>`, `<|eot_id|>`, `[INST]`, `<<SYS>>`).
+  > - **Release Pipeline Consolidation (BUG-17 / P0-13):** Unified duplicate release workflows into a single idempotent `release.yml` with reproducible builds (`SOURCE_DATE_EPOCH`), `twine check --strict` verification, SHA-256 checksum generation, and OIDC Trusted Publishing.
+  > - **LLM Streaming Cost & Token Tracking (BUG-18 / P1-5):** Hooked token accumulation and cost attribution directly into streaming completions (`OpenAIClient`, `AnthropicClient`) with `global_cost_tracker`.
+  > - **Event Loop Binding Race Elimination (BUG-19 / P1-4):** Sourced `_get_client()` with event loop tracking (`asyncio.get_running_loop()`) to safely recreate HTTP client connections when invoked across disparate async event loops or threads.
+  > - **Anthropic Streaming Mid-Stream Error Handling (BUG-20 / P1-6):** Added real-time error interception on Anthropic SSE streams raising `LLMProviderError` and tracking partial tokens.
+  > - **Tool Authorization Enforcement (BUG-21 / P1-23):** Enforced `Tool.requires_approval` directly inside `Tool.execute()` and `ToolRegistry.execute()` to prevent bypasses, raising `ToolApprovalRequiredError`.
+  > - **Provider Test Coverage Expansion (TASK-24 / P0-14):** Added dedicated test suites for `GeminiClient` and `OllamaClient` covering completions, streaming, and error propagation.
+  > - **CI Hardening & Multi-Python Matrix (TASK-25 / P1-27, P1-28):** Enforced least-privilege `permissions: contents: read` across workflows and expanded the test matrix to Python 3.11, 3.12, and 3.13.
+  > - **MCP Client/Server E2E Integration Test Suite (TASK-26 / P1-34):** Added live loopback integration tests executing `FrameworkMCPClient` against `FrameworkMCPServer` over stdio subprocess transports.
+  >
+  > ### Verification
+  > - `pytest tests/`: 356 passed, 1 skipped (100% pass rate) in 10.07s.
+  > - 12/12 EPIC-20 audit tasks verified and completed.
+
+### Added
+- **MCP Client/Server E2E Suite:** Live stdio loopback test in `tests/test_mcp_client.py`.
+- **Gemini & Ollama Test Coverage:** Full suite of unit tests for `GeminiClient` and `OllamaClient` in `tests/test_llm.py`.
+- **Tool Authorization Exception:** `ToolApprovalRequiredError` exported from `common_framework.tools`.
+
+### Changed
+- **Version Bump:** `0.19.1` -> `0.19.2`.
+- **CI Matrix:** Expanded test matrix in `.github/workflows/ci.yml` across Python 3.11, 3.12, and 3.13.
+- **Workflow Consolidation:** Removed duplicate `.github/workflows/python-publish.yml` and unified into `.github/workflows/release.yml`.
+
+### Fixed
+- **SSRF DNS Rebinding & IP Filtering:** Fully remediated SSRF bypass vectors in `src/common_framework/core/security.py`.
+- **CodeInterpreter Arbitrary RCE:** Implemented AST security scanner in `src/common_framework/tools/interpreter.py`.
+- **MCP Auth Bypass on WebSockets:** Enforced ASGI scope guards in `src/common_framework/api/mcp.py`.
+- **Prompt Injection Unicode Evasion:** Added NFKC normalization and zero-width stripping in `src/common_framework/guardrails/moderation.py`.
+- **Streaming Usage & Cost Leakage:** Ensured streamed completions register token counts in `src/common_framework/core/llm.py`.
+- **Event Loop Mismatch in LLM Clients:** Sourced and rebound HTTP client pool to active event loop in `src/common_framework/core/llm.py`.
+- **HITL Tool Approval Enforcement:** Mandated `approved=True` for destructive actions in `src/common_framework/tools/base.py` and `src/common_framework/agents/react.py`.
+
+---
+
 ## [v0.19.1] - 2026-11-16
 
 ### Pull Request

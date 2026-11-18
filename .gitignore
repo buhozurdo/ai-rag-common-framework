@@ -58,9 +58,9 @@ htmlcov/
 *.db
 
 
-# Local release guide
-RELEASE.md
-
 # Cache & tool artifacts
 .rederive/
+.wiki/
+.wiki_git/
+scratch/
 

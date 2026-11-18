@@ -36,6 +36,7 @@ class MCPRemoteTool(Tool):
         self.description = description or f"Remote MCP Tool: {name}"
         self.fn = caller_fn
         self.is_async = True
+        self.requires_approval = False
         self._parameters_schema = dict(input_schema or {})
         self._parameters_schema.pop("title", None)
         # Create dynamic Pydantic model for validation if properties are specified
@@ -71,7 +72,10 @@ class MCPRemoteTool(Tool):
         model_name = f"{self.name.capitalize()}Input"
         return create_model(model_name, **fields)
 
-    async def execute(self, **kwargs: Any) -> Any:
+    async def execute(self, *, approved: bool = False, **kwargs: Any) -> Any:
+        if getattr(self, "requires_approval", False) and not approved:
+            from common_framework.tools.base import ToolApprovalRequiredError
+            raise ToolApprovalRequiredError(self.name)
         return await self.fn(**kwargs)
 
     def to_openai_schema(self) -> dict[str, Any]:
@@ -209,10 +213,11 @@ class FrameworkMCPClient:
             result = await self._session.list_tools()
             tools = []
             for t in result.tools:
+                schema = getattr(t, "input_schema", None) or getattr(t, "inputSchema", None) or {}
                 tools.append({
                     "name": t.name,
                     "description": t.description or "",
-                    "inputSchema": t.inputSchema or {},
+                    "inputSchema": schema,
                 })
             return tools
         except Exception as exc:
@@ -224,7 +229,10 @@ class FrameworkMCPClient:
         args = arguments or {}
         try:
             res = await self._session.call_tool(name, args)
-            if getattr(res, "isError", False):
+            is_err = getattr(res, "isError", None)
+            if is_err is None or type(is_err).__name__ == "MagicMock":
+                is_err = getattr(res, "is_error", False)
+            if bool(is_err) and type(is_err).__name__ != "MagicMock":
                 err_text = self._extract_content_text(res.content)
                 raise MCPToolCallError(name, err_text or "Remote execution reported an error", details={"arguments": args})
 

@@ -96,7 +96,7 @@ class ReActAgent:
             self.registry = global_tool_registry
 
         self.memory = memory or ConversationBufferMemory(max_messages=12)
-        self.approval_hook = approval_hook or AutoApprovalHook()
+        self.approval_hook = approval_hook
         self.max_iterations = max_iterations
         self.system_prompt_template = system_prompt or DEFAULT_REACT_SYSTEM_PROMPT
 
@@ -250,7 +250,11 @@ class ReActAgent:
                 continue
 
             # Verify tool existence
-            tool_obj = self.registry.get(action)
+            try:
+                tool_obj = self.registry.get(action)
+            except ToolNotFoundError:
+                tool_obj = None
+
             action_args = action_input or {}
             observation: str = ""
 
@@ -259,29 +263,37 @@ class ReActAgent:
             else:
                 # Human-in-the-Loop check
                 requires_hitl = getattr(tool_obj, "requires_approval", False)
-                if requires_hitl and self.approval_hook:
-                    review = await self.approval_hook.review(
-                        ApprovalRequest(
-                            tool_name=action,
-                            arguments=action_args,
-                            context=context,
+                if requires_hitl:
+                    if not self.approval_hook:
+                        observation = (
+                            f"Execution blocked: Tool '{action}' requires approval, "
+                            "but no approval_hook is configured on the agent."
                         )
-                    )
-                    if review.decision == ApprovalDecision.REJECTED:
-                        observation = f"Execution blocked: {review.reason or 'Rejected by human operator.'}"
-                    elif review.decision == ApprovalDecision.MODIFIED:
-                        action_args = review.modified_arguments or action_args
-                        try:
-                            result = await self.registry.execute(action, **action_args)
-                            observation = str(result)
-                        except Exception as exc:
-                            observation = f"Error executing tool '{action}': {exc}"
                     else:
-                        try:
-                            result = await self.registry.execute(action, **action_args)
-                            observation = str(result)
-                        except Exception as exc:
-                            observation = f"Error executing tool '{action}': {exc}"
+                        review = await self.approval_hook.review(
+                            ApprovalRequest(
+                                tool_name=action,
+                                arguments=action_args,
+                                context=context,
+                            )
+                        )
+                        if review.decision == ApprovalDecision.REJECTED:
+                            observation = f"Execution blocked: {review.reason or 'Rejected by human operator.'}"
+                        elif review.decision == ApprovalDecision.MODIFIED:
+                            action_args = review.modified_arguments if review.modified_arguments is not None else action_args
+                            try:
+                                result = await self.registry.execute(action, approved=True, **action_args)
+                                observation = str(result)
+                            except Exception as exc:
+                                observation = f"Error executing tool '{action}': {exc}"
+                        elif review.decision == ApprovalDecision.APPROVED:
+                            try:
+                                result = await self.registry.execute(action, approved=True, **action_args)
+                                observation = str(result)
+                            except Exception as exc:
+                                observation = f"Error executing tool '{action}': {exc}"
+                        else:
+                            observation = f"Execution blocked: Unrecognized approval decision '{review.decision}'"
                 else:
                     try:
                         result = await self.registry.execute(action, **action_args)
@@ -307,6 +319,25 @@ class ReActAgent:
             scratchpad.append(step_text)
 
             yield step, None
+
+    async def bind_mcp_client(self, mcp_client: Any) -> list[str]:
+        """Discover and mount remote tools from an MCP client into the agent's tool registry.
+
+        Args:
+            mcp_client: An instance of FrameworkMCPClient.
+
+        Returns:
+            List of registered tool names.
+        """
+        registered = []
+        if hasattr(mcp_client, "mount_to_registry"):
+            registered = await mcp_client.mount_to_registry(self.registry)
+        elif hasattr(mcp_client, "list_tools"):
+            tools = await mcp_client.list_tools()
+            for t in tools:
+                self.registry.register(t)
+                registered.append(t.name)
+        return registered
 
     def run_sync(
         self,

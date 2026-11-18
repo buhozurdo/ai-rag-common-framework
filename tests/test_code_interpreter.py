@@ -196,3 +196,28 @@ def test_default_instances() -> None:
     assert isinstance(default_code_interpreter, CodeInterpreter)
     assert isinstance(code_interpreter_tool, Tool)
     assert code_interpreter_tool.name == "code_interpreter"
+
+
+@pytest.mark.asyncio
+async def test_code_interpreter_ast_security_blocking() -> None:
+    """Test safe_mode AST security checks block dangerous primitives."""
+    interpreter = CodeInterpreter(safe_mode=True)
+
+    # 1. Block subprocess
+    res1 = await interpreter.run("import subprocess\nsubprocess.run(['ls'])")
+    assert res1.success is False
+    assert "SecurityError" in res1.stderr
+    assert "subprocess" in res1.stderr
+
+    # 2. Block socket
+    res2 = await interpreter.run("from socket import socket\ns = socket()")
+    assert res2.success is False
+    assert "SecurityError" in res2.stderr
+    assert "socket" in res2.stderr
+
+    # 3. Block os.system
+    res3 = await interpreter.run("import os\nos.system('whoami')")
+    assert res3.success is False
+    assert "SecurityError" in res3.stderr
+    assert "system()" in res3.stderr
+

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from enum import Enum
-from typing import Optional
+from typing import Optional, Sequence
 from pydantic import BaseModel, Field
 
 from common_framework.guardrails.sanitizer import PIISanitizer, SanitizationResult
@@ -41,6 +42,9 @@ class GuardrailResult(BaseModel):
         return len(self.violations) > 0
 
 
+# Zero-width / invisible characters used to evade regex-based filters
+_ZERO_WIDTH_PATTERN = re.compile(r"[\u200b-\u200d\ufeff\u00ad\u2060\u200e\u200f]")
+
 # Hardened heuristic regex patterns targeting common prompt injection and jailbreak vectors
 _INJECTION_PATTERNS = [
     # 1. Direct instruction overrides
@@ -63,10 +67,10 @@ _INJECTION_PATTERNS = [
         InjectionThreatLevel.HIGH,
         0.85,
     ),
-    # 3. Delimiter breakout injections (breaking out of context tags)
+    # 3. Delimiter breakout injections (breaking out of context tags or chat templates)
     (
         re.compile(
-            r"(</context>|</document>|</system>|\[/INST\]|<\|im_end\|>|<\|endoftext\|>)",
+            r"(</context>|</document>|</system>|\[/?INST\]|<\|im_start\|>|<\|im_end\|>|<\|endoftext\|>|<\|eot_id\|>|<\|start_header_id\|>|<\|end_header_id\|>|<<SYS>>|<</SYS>>|<start_of_turn>|<end_of_turn>)",
             re.IGNORECASE,
         ),
         "Delimiter breakout injection: payload contains boundary tags attempting to break context enclosure.",
@@ -95,6 +99,15 @@ _INJECTION_PATTERNS = [
     ),
 ]
 
+# Fast-path substring triggers to skip regex execution when no adversarial tokens exist
+_INJECTION_FAST_TRIGGERS = (
+    "ignore", "disregard", "forget", "override", "bypass",
+    "dan", "unfiltered", "jailbreak", "evil", "unrestricted", "god mode", "developer mode",
+    "</", "[/", "[inst", "<|", "<<", "<start_of_turn", "<end_of_turn",
+    "system prompt", "initial prompt", "internal instructions", "hidden rules",
+    "never say no", "do not refuse", "from now on",
+)
+
 
 class PromptGuardrail:
     """Enterprise guardrail evaluator screening inputs and outputs for PII and adversarial injections."""
@@ -117,19 +130,26 @@ class PromptGuardrail:
         violations: list[GuardrailViolation] = []
         max_threat_score = 0.0
 
-        # 1. Prompt Injection Scanning
-        for pattern, description, threat_level, score in _INJECTION_PATTERNS:
-            match = pattern.search(text)
-            if match:
-                max_threat_score = max(max_threat_score, score)
-                violations.append(
-                    GuardrailViolation(
-                        category="prompt_injection",
-                        message=description,
-                        threat_level=threat_level,
-                        snippet=match.group(0),
+        # Normalize text for injection analysis to defeat unicode homoglyph obfuscation
+        # and zero-width invisible character evasion
+        normalized_for_scan = unicodedata.normalize("NFKC", text)
+        normalized_for_scan = _ZERO_WIDTH_PATTERN.sub("", normalized_for_scan)
+
+        # 1. Prompt Injection Scanning with fast trigger pre-filtering
+        scan_lower = normalized_for_scan.lower()
+        if any(trig in scan_lower for trig in _INJECTION_FAST_TRIGGERS):
+            for pattern, description, threat_level, score in _INJECTION_PATTERNS:
+                match = pattern.search(normalized_for_scan)
+                if match:
+                    max_threat_score = max(max_threat_score, score)
+                    violations.append(
+                        GuardrailViolation(
+                            category="prompt_injection",
+                            message=description,
+                            threat_level=threat_level,
+                            snippet=match.group(0),
+                        )
                     )
-                )
 
         # 2. PII Sanitization
         sanitized_text = text
@@ -164,3 +184,11 @@ class PromptGuardrail:
             violations=violations,
             sanitized_text=sanitized_text,
         )
+
+    def evaluate_batch(
+        self,
+        texts: Sequence[str],
+        redact_pii: bool = True,
+    ) -> list[GuardrailResult]:
+        """High-throughput batch evaluation across multiple texts."""
+        return [self.evaluate(t, redact_pii=redact_pii) for t in texts]

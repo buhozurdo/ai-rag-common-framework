@@ -226,3 +226,49 @@ async def test_mcp_dns_rebinding_protection_blocks_malicious_host(sample_mcp_ser
         # Bypasses 421, reaches MCP message handler
         assert res.status_code == 400
         assert "session_id is required" in res.text
+
+
+@pytest.mark.asyncio
+async def test_mcp_auth_middleware_websocket_guard():
+    """Verify MCPAuthMiddleware guards websocket scope from unauthenticated connections."""
+    from common_framework.api.mcp import MCPAuthMiddleware
+
+    async def dummy_app(scope, receive, send):
+        await send({"type": "websocket.accept"})
+
+    middleware = MCPAuthMiddleware(dummy_app, expected_api_key="secret-key")
+
+    closed_events = []
+    async def mock_send(event):
+        closed_events.append(event)
+
+    # 1. Unauthenticated websocket scope
+    ws_scope = {
+        "type": "websocket",
+        "headers": [(b"host", b"localhost")],
+    }
+    await middleware(ws_scope, None, mock_send)
+    assert len(closed_events) == 1
+    assert closed_events[0]["type"] == "websocket.close"
+    assert closed_events[0]["code"] == 4401
+
+    # 2. Authenticated websocket scope
+    accepted_events = []
+    async def mock_send_ok(event):
+        accepted_events.append(event)
+
+    ws_auth_scope = {
+        "type": "websocket",
+        "headers": [(b"authorization", b"Bearer secret-key")],
+    }
+    await middleware(ws_auth_scope, None, mock_send_ok)
+    assert len(accepted_events) == 1
+    assert accepted_events[0]["type"] == "websocket.accept"
+
+
+def test_mount_mcp_enforce_auth_validation(sample_mcp_server):
+    """Verify mount_mcp_to_fastapi raises ValueError when enforce_auth is True and no key provided."""
+    app = FastAPI()
+    with pytest.raises(ValueError, match="api_key"):
+        mount_mcp_to_fastapi(app, sample_mcp_server, api_key=None, enforce_auth=True)
+

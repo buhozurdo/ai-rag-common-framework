@@ -83,6 +83,10 @@ _API_KEY_RE = re.compile(
 )
 
 
+# Trigger prefixes for API key scanning
+_API_KEY_HINTS = ("sk-", "ghp_", "AIza", "Bearer ")
+
+
 def _luhn_checksum_valid(card_number_str: str) -> bool:
     """Validate credit card numbers using the standard Luhn modulo 10 algorithm."""
     digits = [int(c) for c in card_number_str if c.isdigit()]
@@ -173,8 +177,17 @@ class PIISanitizer:
         active_strategy = strategy or self.default_strategy
         entities: list[PIIEntity] = []
 
-        # 1. API Keys
-        if PIIType.API_KEY in self.enabled_types:
+        # Fast pre-filtering: Count digits with early exit
+        # SSN requires >= 9 digits, Phone requires >= 10 digits, Credit Card requires >= 13 digits
+        digit_count = 0
+        for ch in text:
+            if ch.isdigit():
+                digit_count += 1
+                if digit_count >= 13:
+                    break
+
+        # 1. API Keys (only scan if common key prefixes exist in text)
+        if PIIType.API_KEY in self.enabled_types and any(h in text for h in _API_KEY_HINTS):
             for match in _API_KEY_RE.finditer(text):
                 val = match.group(0)
                 entities.append(
@@ -187,8 +200,8 @@ class PIISanitizer:
                     )
                 )
 
-        # 2. Emails
-        if PIIType.EMAIL in self.enabled_types:
+        # 2. Emails (only scan if '@' is present in text)
+        if PIIType.EMAIL in self.enabled_types and "@" in text:
             for match in _EMAIL_RE.finditer(text):
                 val = match.group(0)
                 entities.append(
@@ -201,8 +214,8 @@ class PIISanitizer:
                     )
                 )
 
-        # 3. Credit Cards (with Luhn validation filter)
-        if PIIType.CREDIT_CARD in self.enabled_types:
+        # 3. Credit Cards (only scan if text has >= 13 digits)
+        if PIIType.CREDIT_CARD in self.enabled_types and digit_count >= 13:
             for match in _CREDIT_CARD_RE.finditer(text):
                 val = match.group(0)
                 if _luhn_checksum_valid(val):
@@ -216,8 +229,8 @@ class PIISanitizer:
                         )
                     )
 
-        # 4. SSN
-        if PIIType.SSN in self.enabled_types:
+        # 4. SSN (only scan if text has >= 9 digits)
+        if PIIType.SSN in self.enabled_types and digit_count >= 9:
             for match in _SSN_RE.finditer(text):
                 val = match.group(0)
                 entities.append(
@@ -230,8 +243,8 @@ class PIISanitizer:
                     )
                 )
 
-        # 5. IPv4
-        if PIIType.IP_ADDRESS in self.enabled_types:
+        # 5. IPv4 (only scan if text has '.' and at least 1 digit)
+        if PIIType.IP_ADDRESS in self.enabled_types and "." in text and digit_count > 0:
             for match in _IPV4_RE.finditer(text):
                 val = match.group(0)
                 entities.append(
@@ -244,8 +257,8 @@ class PIISanitizer:
                     )
                 )
 
-        # 6. Phone Numbers
-        if PIIType.PHONE in self.enabled_types:
+        # 6. Phone Numbers (only scan if text has >= 10 digits)
+        if PIIType.PHONE in self.enabled_types and digit_count >= 10:
             for match in _PHONE_RE.finditer(text):
                 val = match.group(0).strip()
                 # Ensure minimum digit count to avoid matching simple numbers
@@ -296,3 +309,11 @@ class PIISanitizer:
             sanitized_text=sanitized,
             entities_found=entities,
         )
+
+    def sanitize_batch(
+        self,
+        texts: Sequence[str],
+        strategy: Optional[RedactionStrategy] = None,
+    ) -> list[SanitizationResult]:
+        """High-throughput batch sanitization pass."""
+        return [self.sanitize(t, strategy=strategy) for t in texts]

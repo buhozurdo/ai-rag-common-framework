@@ -7,10 +7,15 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import copy
 import inspect
 import time
-from typing import Any, Callable, Coroutine, Optional, Union
+import uuid
+from typing import Any, Callable, Coroutine, Optional, Union, TYPE_CHECKING
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from common_framework.agents.checkpoints import BaseCheckpointSaver
 
 START = "__start__"
 END = "__end__"
@@ -112,11 +117,24 @@ class StateGraph:
         initial_state: Optional[dict[str, Any]] = None,
         max_steps: int = 50,
         checkpoint_callback: Optional[Callable[[str, dict[str, Any]], None]] = None,
+        checkpointer: Optional[Any] = None,
+        thread_id: Optional[str] = None,
     ) -> WorkflowResult:
-        """Execute the workflow asynchronously from entry point to END."""
+        """Execute the workflow asynchronously from entry point to END with optional checkpointing."""
         self.validate()
 
-        state: dict[str, Any] = dict(initial_state or {})
+        effective_thread_id = thread_id or str(uuid.uuid4())
+        state: dict[str, Any] = {}
+
+        # Resume from checkpoint if thread_id has an existing checkpoint and no initial_state provided
+        if checkpointer and thread_id:
+            latest_chk = checkpointer.get(thread_id)
+            if latest_chk is not None:
+                state.update(latest_chk.state)
+
+        if initial_state:
+            state.update(initial_state)
+
         steps: list[WorkflowStep] = []
         current_node: Optional[str] = self._entry_point
         iterations = 0
@@ -128,28 +146,36 @@ class StateGraph:
                 break
 
             t0 = time.perf_counter()
-            # Pass state copy to prevent uncontrolled mutation during execution
-            node_output = await self._invoke_callable(node_fn, dict(state))
+            # Deepcopy state to prevent uncontrolled in-place mutation and retroactively mutating snapshots
+            node_output = await self._invoke_callable(node_fn, copy.deepcopy(state) if state else {})
             elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
             if isinstance(node_output, dict):
                 state.update(node_output)
 
-            # Record step snapshot
+            # Record step snapshot with deep copy
             step_record = WorkflowStep(
                 node=current_node,
-                state_snapshot=dict(state),
+                state_snapshot=copy.deepcopy(state),
                 duration_ms=round(elapsed_ms, 3),
             )
             steps.append(step_record)
 
+            if checkpointer:
+                checkpointer.save(
+                    thread_id=effective_thread_id,
+                    node=current_node,
+                    step=iterations,
+                    state=copy.deepcopy(state),
+                )
+
             if checkpoint_callback:
-                await self._invoke_callable(checkpoint_callback, current_node, dict(state))
+                await self._invoke_callable(checkpoint_callback, current_node, copy.deepcopy(state))
 
             # Determine next node transition
             if current_node in self._conditional_edges:
                 router, path_map = self._conditional_edges[current_node]
-                next_key = await self._invoke_callable(router, dict(state))
+                next_key = await self._invoke_callable(router, copy.deepcopy(state))
                 if path_map and next_key in path_map:
                     current_node = path_map[next_key]
                 else:
@@ -173,6 +199,8 @@ class StateGraph:
         initial_state: Optional[dict[str, Any]] = None,
         max_steps: int = 50,
         checkpoint_callback: Optional[Callable[[str, dict[str, Any]], None]] = None,
+        checkpointer: Optional[Any] = None,
+        thread_id: Optional[str] = None,
     ) -> WorkflowResult:
         """Synchronous wrapper for run() supporting execution within running loops."""
         try:
@@ -183,6 +211,22 @@ class StateGraph:
         if loop and loop.is_running():
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 return pool.submit(
-                    lambda: asyncio.run(self.run(initial_state, max_steps, checkpoint_callback))
+                    lambda: asyncio.run(
+                        self.run(
+                            initial_state=initial_state,
+                            max_steps=max_steps,
+                            checkpoint_callback=checkpoint_callback,
+                            checkpointer=checkpointer,
+                            thread_id=thread_id,
+                        )
+                    )
                 ).result()
-        return asyncio.run(self.run(initial_state, max_steps, checkpoint_callback))
+        return asyncio.run(
+            self.run(
+                initial_state=initial_state,
+                max_steps=max_steps,
+                checkpoint_callback=checkpoint_callback,
+                checkpointer=checkpointer,
+                thread_id=thread_id,
+            )
+        )

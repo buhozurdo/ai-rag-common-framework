@@ -63,3 +63,36 @@ def test_embedding_provider_enforces_ssrf_protection():
     """Verify Embedding provider constructor blocks SSRF metadata base_urls."""
     with pytest.raises(ValueError, match="SSRF protection"):
         OpenAICompatibleEmbeddingProvider(base_url="http://169.254.169.254/v1", api_key="test")
+
+
+def test_ssrf_dns_rebinding_protection(monkeypatch):
+    """Verify domains resolving via DNS to metadata IPs are blocked (DNS rebinding mitigation)."""
+    import socket
+
+    # Mock socket.getaddrinfo to simulate attacker domain resolving to 169.254.169.254
+    def mock_getaddrinfo(host, port, *args, **kwargs):
+        if host == "attacker-rebinding.com":
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("169.254.169.254", 80))]
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 80))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", mock_getaddrinfo)
+
+    with pytest.raises(ValueError, match="SSRF protection.*restricted (link-local|cloud metadata)"):
+        validate_provider_base_url("http://attacker-rebinding.com/v1")
+
+
+def test_ssrf_loopback_and_private_controls():
+    """Verify allow_local and block_private options enforce network boundaries."""
+    # Disallow loopback
+    with pytest.raises(ValueError, match="restricted loopback"):
+        validate_provider_base_url("http://127.0.0.1:8000", allow_local=False)
+
+    with pytest.raises(ValueError, match="restricted loopback"):
+        validate_provider_base_url("http://localhost:8000", allow_local=False)
+
+    # Block private IP
+    with pytest.raises(ValueError, match="restricted private network"):
+        validate_provider_base_url("http://10.0.0.1:8000", block_private=True)
+
+    with pytest.raises(ValueError, match="restricted private network"):
+        validate_provider_base_url("http://192.168.1.1:8000", block_private=True)

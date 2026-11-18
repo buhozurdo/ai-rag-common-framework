@@ -1,6 +1,11 @@
 """Tools module providing tool abstractions, decorators, and centralized registry."""
 
-from common_framework.tools.base import Tool, ToolExecutionError, tool
+from common_framework.tools.base import (
+    Tool,
+    ToolApprovalRequiredError,
+    ToolExecutionError,
+    tool,
+)
 from common_framework.tools.interpreter import (
     CodeInterpreter,
     ExecutionResult,
@@ -15,6 +20,7 @@ from common_framework.tools.registry import (
 
 __all__ = [
     "Tool",
+    "ToolApprovalRequiredError",
     "ToolExecutionError",
     "tool",
     "CodeInterpreter",

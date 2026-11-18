@@ -31,7 +31,9 @@ class Settings(BaseSettings):
     )
 
     # LLM Provider defaults
-    default_provider: Literal["gemini", "openai", "anthropic", "ollama"] = Field(
+    default_provider: Literal[
+        "gemini", "openai", "anthropic", "ollama", "deepseek", "groq", "vllm", "custom", "generic"
+    ] = Field(
         default="gemini",
         alias="DEFAULT_LLM_PROVIDER",
         description="Default LLM provider to use if none is explicitly specified",

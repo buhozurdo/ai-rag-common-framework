@@ -343,3 +343,36 @@ async def test_mcp_client_resource_and_prompt_errors(mock_session):
             with pytest.raises(MCPClientError, match="Failed to list remote MCP tools"):
                 await client.list_tools()
 
+
+@pytest.mark.asyncio
+async def test_mcp_client_server_stdio_e2e_integration(tmp_path):
+    """End-to-end integration test: Client connects to Server over stdio, lists tools and calls tool."""
+    import sys
+
+    server_script = tmp_path / "server.py"
+    server_script.write_text(
+        "import asyncio\n"
+        "from common_framework.mcp.server import create_mcp_server\n"
+        "server = create_mcp_server(name='test-stdio-server', version='1.0.0')\n"
+        "@server.tool(name='add_numbers')\n"
+        "def add_numbers(x: int, y: int) -> int:\n"
+        "    return x + y\n"
+        "if __name__ == '__main__':\n"
+        "    asyncio.run(server.run_stdio_async())\n",
+        encoding="utf-8",
+    )
+
+    client = create_mcp_client(
+        command=sys.executable,
+        args=[str(server_script)],
+    )
+
+    async with client:
+        tools = await client.list_tools()
+        tool_names = [t["name"] for t in tools]
+        assert "add_numbers" in tool_names
+
+        res = await client.call_tool("add_numbers", {"x": 20, "y": 22})
+        assert "42" in str(res)
+
+

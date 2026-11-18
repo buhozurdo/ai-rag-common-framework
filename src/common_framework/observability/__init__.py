@@ -1,5 +1,11 @@
 """Observability, Telemetry, and Cost Accounting module for AI RAG Common Framework."""
 
+from common_framework.observability.accounting import (
+    ByteAccountant,
+    ByteAllocationRecord,
+    ByteCategory,
+    get_byte_accountant,
+)
 from common_framework.observability.cost import (
     CostRecord,
     ModelPricing,
@@ -22,6 +28,10 @@ from common_framework.observability.tracing import (
 )
 
 __all__ = [
+    "ByteAccountant",
+    "ByteAllocationRecord",
+    "ByteCategory",
+    "get_byte_accountant",
     "ModelPricing",
     "CostRecord",
     "TokenCostTracker",

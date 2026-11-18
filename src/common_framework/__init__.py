@@ -19,6 +19,7 @@ from common_framework.core.cache import (
     SemanticCacheHit,
     SemanticCacheStats,
 )
+from common_framework.core.security import validate_provider_base_url
 from common_framework.core.exceptions import (
     AllProvidersFailedError,
     AuthenticationError,
@@ -26,6 +27,9 @@ from common_framework.core.exceptions import (
     FrameworkError,
     LLMError,
     LLMProviderError,
+    MCPClientError,
+    MCPConnectionError,
+    MCPToolCallError,
     ModelNotFoundError,
     RateLimitError,
     StructuredOutputError,
@@ -74,6 +78,11 @@ from common_framework.agents.workflow import (
     WorkflowResult,
     WorkflowStep,
 )
+from common_framework.agents.checkpoints import (
+    BaseCheckpointSaver,
+    Checkpoint,
+    SQLiteCheckpointSaver,
+)
 from common_framework.eval.hallucination import (
     HallucinationDetector,
     HallucinationReport,
@@ -117,15 +126,38 @@ from common_framework.observability.tracing import (
     global_span_exporter,
     trace_span,
 )
-from common_framework.api.app import create_app
-from common_framework.api.mcp import mount_mcp_to_fastapi
-from common_framework.api.routes.rag import create_rag_router
-from common_framework.mcp.client import (
-    FrameworkMCPClient,
-    MCPRemoteTool,
-    create_mcp_client,
+try:
+    from common_framework.api.app import create_app
+    from common_framework.api.mcp import mount_mcp_to_fastapi
+    from common_framework.api.routes.rag import create_rag_router
+except ImportError:
+    create_app = None  # type: ignore[assignment]
+    mount_mcp_to_fastapi = None  # type: ignore[assignment]
+    create_rag_router = None  # type: ignore[assignment]
+
+try:
+    from common_framework.mcp.client import (
+        FrameworkMCPClient,
+        MCPRemoteTool,
+        create_mcp_client,
+    )
+    from common_framework.mcp.server import FrameworkMCPServer, create_mcp_server
+except ImportError:
+    FrameworkMCPClient = None  # type: ignore[assignment]
+    MCPRemoteTool = None  # type: ignore[assignment]
+    create_mcp_client = None  # type: ignore[assignment]
+    FrameworkMCPServer = None  # type: ignore[assignment]
+    create_mcp_server = None  # type: ignore[assignment]
+
+from common_framework.rag.loaders import (
+    BaseLoader,
+    CSVLoader,
+    DirectoryLoader,
+    HTMLLoader,
+    MarkdownLoader,
+    PDFLoader,
+    TextLoader,
 )
-from common_framework.mcp.server import FrameworkMCPServer, create_mcp_server
 from common_framework.rag.bm25 import BM25Index, reciprocal_rank_fusion, tokenize
 from common_framework.rag.embeddings import (
     BaseEmbeddingProvider,
@@ -193,6 +225,10 @@ __all__ = [
     "ModelNotFoundError",
     "StructuredOutputError",
     "AllProvidersFailedError",
+    "MCPClientError",
+    "MCPConnectionError",
+    "MCPToolCallError",
+    "validate_provider_base_url",
     "BaseLLMClient",
     "AnthropicClient",
     "FallbackCandidate",
@@ -251,6 +287,13 @@ __all__ = [
     "MultiQueryStrategy",
     "HyDEStrategy",
     "multi_list_rrf",
+    "BaseLoader",
+    "TextLoader",
+    "MarkdownLoader",
+    "CSVLoader",
+    "HTMLLoader",
+    "DirectoryLoader",
+    "PDFLoader",
     "ReActAgent",
     "AgentStep",
     "AgentResponse",
@@ -261,6 +304,9 @@ __all__ = [
     "StateGraph",
     "WorkflowResult",
     "WorkflowStep",
+    "BaseCheckpointSaver",
+    "Checkpoint",
+    "SQLiteCheckpointSaver",
     "START",
     "END",
     "BaseMemory",

@@ -306,3 +306,177 @@ async def test_fallback_client_aclose_cascading():
     assert http1.is_closed
     assert http2.is_closed
 
+
+@pytest.mark.asyncio
+async def test_openai_streaming_usage_and_cost_tracking():
+    """Verify OpenAI stream captures usage and calls cost tracker."""
+    from common_framework.observability.cost import global_cost_tracker
+
+    initial_calls = len(global_cost_tracker._records)
+
+    sse_lines = [
+        'data: {"choices": [{"delta": {"content": "Hello"}}], "model": "gpt-4o"}\n\n',
+        'data: {"choices": [{"delta": {"content": " world!"}}], "model": "gpt-4o"}\n\n',
+        'data: {"choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}, "model": "gpt-4o"}\n\n',
+        'data: [DONE]\n\n',
+    ]
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content="".join(sse_lines).encode("utf-8"),
+        )
+
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    client = OpenAICompatibleClient(api_key="sk-test", client=mock_http)
+
+    chunks = []
+    async for chunk in client.complete_stream([ChatMessage(role=Role.USER, content="Hi")]):
+        chunks.append(chunk)
+
+    text = "".join(c.delta for c in chunks)
+    assert text == "Hello world!"
+    assert any(c.usage is not None for c in chunks)
+    assert len(global_cost_tracker._records) == initial_calls + 1
+
+
+@pytest.mark.asyncio
+async def test_anthropic_streaming_usage_and_mid_stream_error():
+    """Verify Anthropic stream captures usage and raises LLMProviderError on mid-stream error."""
+    from common_framework.core.exceptions import LLMProviderError
+    from common_framework.core.llm import AnthropicClient
+
+    # 1. Test error midway through stream
+    error_sse = [
+        'data: {"type": "message_start", "message": {"usage": {"input_tokens": 20}}}\n\n',
+        'data: {"type": "content_block_delta", "delta": {"text": "Start"}}\n\n',
+        'data: {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}}\n\n',
+    ]
+
+    def error_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content="".join(error_sse).encode("utf-8"),
+        )
+
+    client_err = AnthropicClient(
+        api_key="sk-ant",
+        client=httpx.AsyncClient(transport=httpx.MockTransport(error_handler)),
+    )
+
+    with pytest.raises(LLMProviderError, match="Anthropic streaming mid-stream error: Overloaded"):
+        async for chunk in client_err.complete_stream([ChatMessage(role=Role.USER, content="Hi")]):
+            pass
+
+    # 2. Test successful stream with usage recording
+    from common_framework.observability.cost import global_cost_tracker
+    initial_calls = len(global_cost_tracker._records)
+
+    success_sse = [
+        'data: {"type": "message_start", "message": {"usage": {"input_tokens": 20}}}\n\n',
+        'data: {"type": "content_block_delta", "delta": {"text": " Claude is speaking"}}\n\n',
+        'data: {"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 10}}\n\n',
+    ]
+
+    def ok_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content="".join(success_sse).encode("utf-8"),
+        )
+
+    client_ok = AnthropicClient(
+        api_key="sk-ant",
+        client=httpx.AsyncClient(transport=httpx.MockTransport(ok_handler)),
+    )
+
+    chunks = []
+    async for chunk in client_ok.complete_stream([ChatMessage(role=Role.USER, content="Hi")]):
+        chunks.append(chunk)
+
+    assert "".join(c.delta for c in chunks) == " Claude is speaking"
+    assert len(global_cost_tracker._records) == initial_calls + 1
+
+
+@pytest.mark.asyncio
+async def test_gemini_client_complete_and_streaming():
+    """Verify GeminiClient completes and streams against Google OpenAI-compatible endpoint."""
+    call_log = []
+
+    def gemini_mock(request: httpx.Request) -> httpx.Response:
+        call_log.append(request)
+        assert "generativelanguage.googleapis.com" in str(request.url)
+        if request.url.path.endswith("/chat/completions"):
+            req_body = json.loads(request.content.decode("utf-8"))
+            if req_body.get("stream"):
+                sse = (
+                    'data: {"choices": [{"delta": {"content": "Gemini stream"}}], "model": "gemini-2.5-flash"}\n\n'
+                    'data: [DONE]\n\n'
+                )
+                return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=sse.encode())
+            else:
+                resp = {
+                    "model": "gemini-2.5-flash",
+                    "choices": [{"message": {"role": "assistant", "content": "Gemini answer"}, "finish_reason": "stop"}],
+                    "usage": {"prompt_tokens": 12, "completion_tokens": 6, "total_tokens": 18},
+                }
+                return httpx.Response(200, json=resp)
+        return httpx.Response(404)
+
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(gemini_mock))
+    client = GeminiClient(api_key="gemini-key", client=mock_http)
+    assert client.provider_name == "gemini"
+
+    # Complete
+    res = await client.complete([ChatMessage(role=Role.USER, content="Hello Gemini")])
+    assert res.content == "Gemini answer"
+    assert res.model == "gemini-2.5-flash"
+    assert res.usage.total_tokens == 18
+
+    # Stream
+    streamed = []
+    async for chunk in client.complete_stream([ChatMessage(role=Role.USER, content="Stream Gemini")]):
+        streamed.append(chunk.delta)
+    assert "".join(streamed) == "Gemini stream"
+
+
+@pytest.mark.asyncio
+async def test_ollama_client_complete_and_streaming():
+    """Verify OllamaClient completes and streams against local endpoint."""
+    def ollama_mock(request: httpx.Request) -> httpx.Response:
+        assert "localhost" in str(request.url) or "127.0.0.1" in str(request.url)
+        assert request.url.path.endswith("/v1/chat/completions")
+        req_body = json.loads(request.content.decode("utf-8"))
+        if req_body.get("stream"):
+            sse = (
+                'data: {"choices": [{"delta": {"content": "Ollama local"}}], "model": "llama3.2"}\n\n'
+                'data: [DONE]\n\n'
+            )
+            return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=sse.encode())
+        else:
+            resp = {
+                "model": "llama3.2",
+                "choices": [{"message": {"role": "assistant", "content": "Ollama local answer"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 8, "completion_tokens": 4, "total_tokens": 12},
+            }
+            return httpx.Response(200, json=resp)
+
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(ollama_mock))
+    client = OllamaClient(base_url="http://localhost:11434", client=mock_http)
+    assert client.provider_name == "ollama"
+
+    # Complete
+    res = await client.complete([ChatMessage(role=Role.USER, content="Hello Ollama")])
+    assert res.content == "Ollama local answer"
+    assert res.model == "llama3.2"
+
+    # Stream
+    streamed = []
+    async for chunk in client.complete_stream([ChatMessage(role=Role.USER, content="Stream Ollama")]):
+        streamed.append(chunk.delta)
+    assert "".join(streamed) == "Ollama local"
+
+
+

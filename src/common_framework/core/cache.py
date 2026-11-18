@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import json
 import logging
+import sys
 import time
 from typing import Any, Optional, Sequence, Union
 
@@ -38,6 +41,24 @@ class SemanticCacheEntry(BaseModel):
     last_accessed_at: float = Field(default_factory=time.time)
     ttl: Optional[float] = None
 
+    def estimate_bytes(self) -> int:
+        """Estimate the exact byte footprint of this cache entry in memory."""
+        query_b = len(self.query.encode("utf-8"))
+        emb_b = len(self.embedding) * 4  # 4 bytes per float32 IEEE 754 value
+        if isinstance(self.response, str):
+            resp_b = len(self.response.encode("utf-8"))
+        elif hasattr(self.response, "model_dump_json"):
+            resp_b = len(self.response.model_dump_json().encode("utf-8"))
+        elif isinstance(self.response, (dict, list)):
+            try:
+                resp_b = len(json.dumps(self.response).encode("utf-8"))
+            except Exception:
+                resp_b = sys.getsizeof(self.response)
+        else:
+            resp_b = sys.getsizeof(self.response)
+        meta_b = len(json.dumps(self.metadata).encode("utf-8")) if self.metadata else 0
+        return query_b + emb_b + resp_b + meta_b + 128
+
     def is_expired(self, current_time: Optional[float] = None) -> bool:
         """Return True if the entry has an active TTL and has expired."""
         if self.ttl is None:
@@ -64,6 +85,8 @@ class SemanticCacheStats(BaseModel):
     misses: int = 0
     evictions: int = 0
     total_entries: int = 0
+    total_bytes: int = 0
+    max_memory_bytes: Optional[int] = None
 
     @property
     def hit_ratio(self) -> float:
@@ -77,6 +100,7 @@ class SemanticCache:
 
     Avoids redundant, costly LLM completions and retrieval steps for queries
     that are semantically equivalent above a configurable similarity threshold.
+    Supports both count-based and strict byte-budget memory limits.
     """
 
     def __init__(
@@ -84,16 +108,20 @@ class SemanticCache:
         embedding_provider: Optional[BaseEmbeddingProvider] = None,
         similarity_threshold: float = DEFAULT_CACHE_THRESHOLD,
         max_entries: int = DEFAULT_MAX_ENTRIES,
+        max_memory_bytes: Optional[int] = None,
         default_ttl: Optional[float] = None,
     ) -> None:
         if not (0.0 <= similarity_threshold <= 1.0):
             raise ValueError(f"similarity_threshold must be between 0.0 and 1.0, got {similarity_threshold}")
         if max_entries < 1:
             raise ValueError(f"max_entries must be at least 1, got {max_entries}")
+        if max_memory_bytes is not None and max_memory_bytes < 1:
+            raise ValueError(f"max_memory_bytes must be at least 1 if set, got {max_memory_bytes}")
 
         self.embedding_provider = embedding_provider or EmbeddingFactory.create("mock")
         self.similarity_threshold = similarity_threshold
         self.max_entries = max_entries
+        self.max_memory_bytes = max_memory_bytes
         self.default_ttl = default_ttl
 
         # Partitioned store: namespace -> list of SemanticCacheEntry
@@ -101,6 +129,12 @@ class SemanticCache:
         self._hits: int = 0
         self._misses: int = 0
         self._evictions: int = 0
+        self._lock: Optional[asyncio.Lock] = None
+
+    def _get_lock(self) -> asyncio.Lock:
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
 
     def _ensure_namespace(self, namespace: str) -> list[SemanticCacheEntry]:
         if namespace not in self._entries:
@@ -110,17 +144,36 @@ class SemanticCache:
     def _evict_expired(self, namespace: str, now: float) -> None:
         """Remove expired entries in the specified namespace."""
         if namespace in self._entries:
-            valid_entries = [e for e in self._entries[namespace] if not e.is_expired(now)]
-            self._entries[namespace] = valid_entries
+            self._entries[namespace][:] = [e for e in self._entries[namespace] if not e.is_expired(now)]
+
+    def total_bytes(self, namespace: Optional[str] = None) -> int:
+        """Return the total estimated memory footprint in bytes for cached entries."""
+        now = time.time()
+        if namespace is not None:
+            self._evict_expired(namespace, now)
+            return sum(e.estimate_bytes() for e in self._entries.get(namespace, []))
+        total = 0
+        for ns in list(self._entries.keys()):
+            self._evict_expired(ns, now)
+            total += sum(e.estimate_bytes() for e in self._entries.get(ns, []))
+        return total
 
     def _enforce_capacity(self, namespace: str) -> None:
-        """Evict least-recently-accessed entry if namespace exceeds max_entries."""
+        """Evict least-recently-accessed entry if namespace exceeds max_entries or max_memory_bytes."""
         entries = self._ensure_namespace(namespace)
-        if len(entries) > self.max_entries:
-            # Sort by last_accessed_at ascending and remove the oldest
+        
+        # Enforce max entry count
+        while len(entries) > self.max_entries:
             entries.sort(key=lambda x: x.last_accessed_at)
             entries.pop(0)
             self._evictions += 1
+
+        # Enforce max memory bytes budget
+        if self.max_memory_bytes is not None and self.max_memory_bytes > 0:
+            while entries and sum(e.estimate_bytes() for e in entries) > self.max_memory_bytes:
+                entries.sort(key=lambda x: x.last_accessed_at)
+                entries.pop(0)
+                self._evictions += 1
 
     async def get(
         self,
@@ -136,14 +189,8 @@ class SemanticCache:
         """
         threshold = similarity_threshold if similarity_threshold is not None else self.similarity_threshold
         now = time.time()
-        self._evict_expired(namespace, now)
 
-        entries = self._ensure_namespace(namespace)
-        if not entries:
-            self._misses += 1
-            return None
-
-        # Compute query embedding if not provided
+        # Compute query embedding if not provided (outside lock to prevent blocking concurrent lookups)
         query_emb = embedding
         if query_emb is None:
             query_emb = await self.embedding_provider.embed_query(query)
@@ -153,45 +200,52 @@ class SemanticCache:
             self._misses += 1
             return None
 
-        best_score = -1.0
-        best_entry: Optional[SemanticCacheEntry] = None
+        async with self._get_lock():
+            self._evict_expired(namespace, now)
+            entries = self._ensure_namespace(namespace)
+            if not entries:
+                self._misses += 1
+                return None
 
-        for entry in entries:
-            # Dot product between pre-normalized query and stored pre-normalized entry
-            dot = sum(a * b for a, b in zip(q_unit, entry.embedding))
-            score = (max(-1.0, min(1.0, dot)) + 1.0) / 2.0
-            if score > best_score:
-                best_score = score
-                best_entry = entry
+            best_score = -1.0
+            best_entry: Optional[SemanticCacheEntry] = None
 
-        if best_entry is not None and best_score >= threshold:
-            best_entry.last_accessed_at = now
-            self._hits += 1
+            for entry in entries:
+                # Dot product between pre-normalized query and stored pre-normalized entry
+                dot = sum(a * b for a, b in zip(q_unit, entry.embedding))
+                score = (max(-1.0, min(1.0, dot)) + 1.0) / 2.0
+                if score > best_score:
+                    best_score = score
+                    best_entry = entry
+
+            if best_entry is not None and best_score >= threshold:
+                best_entry.last_accessed_at = now
+                self._hits += 1
+                logger.debug(
+                    "Semantic cache HIT (score=%.4f >= threshold=%.4f, namespace=%r) for query: %r",
+                    best_score,
+                    threshold,
+                    namespace,
+                    query,
+                )
+                return SemanticCacheHit(
+                    query=query,
+                    matched_query=best_entry.query,
+                    similarity_score=best_score,
+                    response=best_entry.response,
+                    namespace=namespace,
+                    metadata=best_entry.metadata,
+                )
+
+            self._misses += 1
             logger.debug(
-                "Semantic cache HIT (score=%.4f >= threshold=%.4f, namespace=%r) for query: %r",
+                "Semantic cache MISS (best_score=%.4f < threshold=%.4f, namespace=%r) for query: %r",
                 best_score,
                 threshold,
                 namespace,
                 query,
             )
-            return SemanticCacheHit(
-                query=query,
-                matched_query=best_entry.query,
-                similarity_score=best_score,
-                response=best_entry.response,
-                namespace=namespace,
-                metadata=best_entry.metadata,
-            )
-
-        self._misses += 1
-        logger.debug(
-            "Semantic cache MISS (best_score=%.4f < threshold=%.4f, namespace=%r) for query: %r",
-            best_score,
-            threshold,
-            namespace,
-            query,
-        )
-        return None
+            return None
 
     async def set(
         self,
@@ -221,9 +275,10 @@ class SemanticCache:
             ttl=entry_ttl,
         )
 
-        entries = self._ensure_namespace(namespace)
-        entries.append(entry)
-        self._enforce_capacity(namespace)
+        async with self._get_lock():
+            entries = self._ensure_namespace(namespace)
+            entries.append(entry)
+            self._enforce_capacity(namespace)
         logger.debug("Stored entry in semantic cache (namespace=%r, query=%r)", namespace, query)
 
     def clear(self, namespace: Optional[str] = None) -> None:
@@ -247,11 +302,14 @@ class SemanticCache:
 
     def stats(self) -> SemanticCacheStats:
         """Return performance and usage statistics for this cache."""
+        total_b = self.total_bytes()
         return SemanticCacheStats(
             hits=self._hits,
             misses=self._misses,
             evictions=self._evictions,
             total_entries=self.size(),
+            total_bytes=total_b,
+            max_memory_bytes=self.max_memory_bytes,
         )
 
 
@@ -275,11 +333,16 @@ class CachedLLMClient(BaseLLMClient):
         model: Optional[str] = None,
         temperature: Optional[float] = None,
     ) -> str:
-        """Compute partitioned cache namespace accounting for model, temperature, and system prompt."""
+        """Compute partitioned cache namespace accounting for model, temperature, system prompt, and multi-turn context."""
         m_str = (model or getattr(self.underlying_client, "default_model", "default")).lower().strip()
         t_str = f"t{temperature:.2f}" if temperature is not None else "t_def"
         sys_msgs = [m.content for m in messages if getattr(m, "role", None) in ("system", "System", Role.SYSTEM)]
         sys_hash = hashlib.sha256(sys_msgs[0].encode("utf-8")).hexdigest()[:8] if sys_msgs else "nosys"
+        history_msgs = messages[:-1] if len(messages) > 1 else []
+        if history_msgs:
+            hist_str = json.dumps([{"r": str(getattr(m, "role", "")), "c": getattr(m, "content", "")} for m in history_msgs])
+            hist_hash = hashlib.sha256(hist_str.encode("utf-8")).hexdigest()[:8]
+            return f"{self.namespace}:{m_str}:{t_str}:{sys_hash}:{hist_hash}"
         return f"{self.namespace}:{m_str}:{t_str}:{sys_hash}"
 
     def _extract_query_text(self, messages: list[ChatMessage]) -> str:

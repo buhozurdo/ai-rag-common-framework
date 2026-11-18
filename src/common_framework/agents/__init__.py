@@ -32,6 +32,11 @@ from common_framework.agents.workflow import (
     WorkflowResult,
     WorkflowStep,
 )
+from common_framework.agents.checkpoints import (
+    BaseCheckpointSaver,
+    Checkpoint,
+    SQLiteCheckpointSaver,
+)
 
 __all__ = [
     "ReActAgent",
@@ -56,4 +61,7 @@ __all__ = [
     "AutoApprovalHook",
     "CallableApprovalHook",
     "QueueApprovalHook",
+    "BaseCheckpointSaver",
+    "Checkpoint",
+    "SQLiteCheckpointSaver",
 ]

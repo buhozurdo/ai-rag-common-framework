@@ -236,7 +236,7 @@ class InMemoryVectorStore(BaseVectorStore):
         collection: str = DEFAULT_COLLECTION,
         filter_metadata: Optional[dict[str, Any]] = None,
     ) -> list[SearchResult]:
-        if collection not in self._collections or not query_embedding:
+        if top_k <= 0 or collection not in self._collections or not query_embedding:
             return []
 
         doc_store = self._collections[collection]
@@ -275,14 +275,23 @@ class InMemoryVectorStore(BaseVectorStore):
             raw_scores = matrix.dot(q_arr)  # Single BLAS GEMV call
 
             if filter_metadata:
-                filter_key = tuple(sorted(filter_metadata.items()))
+                def _make_hashable(val: Any) -> Any:
+                    if isinstance(val, (list, tuple)):
+                        return tuple(_make_hashable(x) for x in val)
+                    if isinstance(val, dict):
+                        return tuple(sorted((k, _make_hashable(v)) for k, v in val.items()))
+                    return val
+
+                filter_key = tuple(sorted((k, _make_hashable(v)) for k, v in filter_metadata.items()))
                 coll_cache = self._filter_indices_cache.setdefault(collection, {})
+                if len(coll_cache) > 512:
+                    coll_cache.clear()
                 idx_arr = coll_cache.get(filter_key)
                 if idx_arr is None:
                     idx_list = []
                     for idx, d_id in enumerate(doc_ids):
                         meta = doc_store[d_id].metadata
-                        if all(meta.get(k) == v for k, v in filter_key):
+                        if all(meta.get(k) == v or _make_hashable(meta.get(k)) == v for k, v in filter_key):
                             idx_list.append(idx)
                     idx_arr = np.array(idx_list, dtype=np.int32)
                     coll_cache[filter_key] = idx_arr
@@ -366,6 +375,8 @@ class InMemoryVectorStore(BaseVectorStore):
         sparse_weight: float = 0.5,
         filter_metadata: Optional[dict[str, Any]] = None,
     ) -> list[SearchResult]:
+        if top_k <= 0:
+            return []
         async with self._get_collection_lock(collection):
             if collection not in self._collections:
                 return []

@@ -131,13 +131,14 @@ class QueueApprovalHook(BaseApprovalHook):
         reason: Optional[str] = None,
         modified_arguments: Optional[dict[str, Any]] = None,
     ) -> tuple[ApprovalRequest, ApprovalResponse]:
-        """Resolve the oldest pending approval request in the queue."""
-        request, future = await self.pending_requests.get()
-        response = ApprovalResponse(
-            decision=decision,
-            reason=reason,
-            modified_arguments=modified_arguments,
-        )
-        if not future.done():
-            future.set_result(response)
-        return request, response
+        """Resolve the oldest active pending approval request in the queue."""
+        while True:
+            request, future = await self.pending_requests.get()
+            if not future.done():
+                response = ApprovalResponse(
+                    decision=decision,
+                    reason=reason,
+                    modified_arguments=modified_arguments,
+                )
+                future.set_result(response)
+                return request, response

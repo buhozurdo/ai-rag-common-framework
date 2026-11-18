@@ -6,6 +6,7 @@ Provides secure, isolated Python execution environments for agents and tools wit
 from __future__ import annotations
 
 import asyncio
+import ast
 import concurrent.futures
 import os
 import sys
@@ -67,6 +68,13 @@ SAFE_SYSTEM_VARS = (
 )
 
 
+# Security policy: modules and process execution primitives blocked in safe mode
+DANGEROUS_MODULES = frozenset({"subprocess", "pty", "multiprocessing", "ctypes", "socket"})
+DANGEROUS_ATTRS = frozenset(
+    {"system", "popen", "spawnl", "spawnv", "spawnle", "spawnve", "spawnlp", "spawnvp", "kill", "fork"}
+)
+
+
 class CodeInterpreter:
     """Isolated Python code interpreter running code in an ephemeral sandbox."""
 
@@ -75,6 +83,7 @@ class CodeInterpreter:
         timeout: float = 10.0,
         max_output_length: int = 10000,
         scrub_environment: bool = True,
+        safe_mode: bool = True,
         custom_env: Optional[dict[str, str]] = None,
         base_dir: Optional[str] = None,
     ) -> None:
@@ -84,14 +93,40 @@ class CodeInterpreter:
             timeout: Maximum execution duration in seconds before killing the process.
             max_output_length: Maximum allowed characters in stdout/stderr before truncation.
             scrub_environment: Whether to strip sensitive environment variables (API keys, secrets).
+            safe_mode: Whether to statically enforce AST security rules blocking dangerous primitives.
             custom_env: Optional dictionary of environment variables to inject.
             base_dir: Optional directory where ephemeral scratch folders should be created.
         """
         self.timeout = timeout
         self.max_output_length = max_output_length
         self.scrub_environment = scrub_environment
+        self.safe_mode = safe_mode
         self.custom_env = dict(custom_env or {})
         self.base_dir = base_dir
+
+    def _validate_code_ast(self, code: str) -> Optional[str]:
+        """Verify code does not import dangerous system modules or invoke dangerous process primitives."""
+        try:
+            tree = ast.parse(code)
+        except SyntaxError:
+            # Let standard Python runtime handle and report syntax error
+            return None
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    root_mod = alias.name.split(".")[0]
+                    if root_mod in DANGEROUS_MODULES:
+                        return f"Disallowed import '{alias.name}'. Module is blocked in safe sandbox mode."
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    root_mod = node.module.split(".")[0]
+                    if root_mod in DANGEROUS_MODULES:
+                        return f"Disallowed import from '{node.module}'. Module is blocked in safe sandbox mode."
+            elif isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Attribute) and node.func.attr in DANGEROUS_ATTRS:
+                    return f"Disallowed invocation '{node.func.attr}()'. Process and system execution calls are blocked in safe sandbox mode."
+        return None
 
     def _prepare_environment(self) -> dict[str, str]:
         """Construct sanitized environment variables for child execution."""
@@ -120,6 +155,17 @@ class CodeInterpreter:
 
     async def run(self, code: str) -> ExecutionResult:
         """Execute Python code asynchronously in an ephemeral subprocess sandbox."""
+        if self.safe_mode:
+            violation = self._validate_code_ast(code)
+            if violation:
+                return ExecutionResult(
+                    stdout="",
+                    stderr=f"SecurityError: {violation}",
+                    exit_code=1,
+                    timed_out=False,
+                    duration_ms=0.0,
+                )
+
         env = self._prepare_environment()
         t0 = time.perf_counter()
 

@@ -60,6 +60,17 @@ def deprecated(
             target.__deprecated_removal__ = removal_version  # type: ignore[attr-defined]
             return target
 
+        if inspect.iscoroutinefunction(target):
+            @functools.wraps(target)
+            async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                warnings.warn(message, category=FrameworkDeprecationWarning, stacklevel=2)
+                return await target(*args, **kwargs)
+
+            async_wrapper.__deprecated__ = True  # type: ignore[attr-defined]
+            async_wrapper.__deprecated_since__ = since  # type: ignore[attr-defined]
+            async_wrapper.__deprecated_removal__ = removal_version  # type: ignore[attr-defined]
+            return async_wrapper  # type: ignore[return-value]
+
         @functools.wraps(target)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             warnings.warn(message, category=FrameworkDeprecationWarning, stacklevel=2)

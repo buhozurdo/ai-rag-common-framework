@@ -20,6 +20,16 @@ class ToolExecutionError(FrameworkError):
         self.tool_name = tool_name
 
 
+class ToolApprovalRequiredError(FrameworkError):
+    """Raised when a tool that requires human approval is executed without approval."""
+
+    def __init__(self, tool_name: str) -> None:
+        super().__init__(
+            f"Tool '{tool_name}' requires approval before execution. Pass approved=True to execute."
+        )
+        self.tool_name = tool_name
+
+
 class Tool:
     """A callable tool with strict Pydantic validation and auto-generated JSON schema."""
 
@@ -83,8 +93,11 @@ class Tool:
             },
         }
 
-    async def execute(self, **kwargs: Any) -> Any:
+    async def execute(self, *, approved: bool = False, **kwargs: Any) -> Any:
         """Validate input arguments against schema and execute the underlying function."""
+        if self.requires_approval and not approved:
+            raise ToolApprovalRequiredError(self.name)
+
         try:
             validated = self._args_model.model_validate(kwargs)
             validated_kwargs = validated.model_dump()
@@ -106,25 +119,25 @@ class Tool:
                 details={"inputs": validated_kwargs},
             ) from exc
 
-    def execute_sync(self, **kwargs: Any) -> Any:
+    def execute_sync(self, *, approved: bool = False, **kwargs: Any) -> Any:
         """Synchronously execute the tool, managing the event loop automatically."""
         try:
             asyncio.get_running_loop()
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(asyncio.run, self.execute(**kwargs)).result()
+                return pool.submit(asyncio.run, self.execute(approved=approved, **kwargs)).result()
         except RuntimeError:
-            return asyncio.run(self.execute(**kwargs))
+            return asyncio.run(self.execute(approved=approved, **kwargs))
 
-    async def __call__(self, *args: Any, **kwargs: Any) -> Any:
+    async def __call__(self, *args: Any, approved: bool = False, **kwargs: Any) -> Any:
         """Allow calling the tool directly as a callable object."""
         if args:
             # Bind positional args to kwargs
             sig = inspect.signature(self.fn)
             bound = sig.bind(*args, **kwargs)
             bound.apply_defaults()
-            return await self.execute(**bound.arguments)
-        return await self.execute(**kwargs)
+            return await self.execute(approved=approved, **bound.arguments)
+        return await self.execute(approved=approved, **kwargs)
 
     def __repr__(self) -> str:
         return f"<Tool name={self.name!r} async={self.is_async}>"
