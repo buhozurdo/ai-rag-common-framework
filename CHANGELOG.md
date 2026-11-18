@@ -4,6 +4,34 @@ All notable changes to this project are documented in this file following [Keep 
 
 ---
 
+## [v0.19.4] - 2026-11-17
+
+### Pull Request
+- **PR Title:** `release: v0.19.4 - CI Workflow Hardening & PDFLoader Dependency Precedence Fix`
+- **PR Description:**
+  > ### Summary
+  > Releases `v0.19.4` resolving CI/CD dependency conflicts, bumping GitHub Actions to secure pinned SHAs, and fixing `PDFLoader` optional dependency precedence in headless environments.
+  >
+  > ### Key Changes
+  > - **PDFLoader Dependency Precedence:** Validates availability of optional `pypdf` dependency before asserting filesystem existence in `PDFLoader.load()`, avoiding unexpected `FileNotFoundError` when `pypdf` is missing in containerized and CI environments.
+  > - **Test Isolation:** Decoupled `test_pdf_loader_missing_dependency` from host environment state using `unittest.mock.patch.dict(sys.modules, {"pypdf": None})` with temporary fixture files, and added `test_pdf_loader_file_not_found`.
+  > - **CI/CD Action Pinned SHAs:** Unified workflow updates across `ci.yml`, `release.yml`, and `sonar.yml` with securely pinned commit SHAs for `actions/checkout` (v4.2.2), `actions/setup-python` (v5.6.0), `codecov/codecov-action` (v5.4.0), `actions/cache` (v4.3.0), `SonarSource/sonarqube-scan-action` (v8.5.0), and `softprops/action-gh-release` (v2.2.1).
+  > - **Workflow Deduplication:** Enforced single-pipeline release architecture and prevented duplicate publish workflows.
+  >
+  > ### Verification
+  > - `pytest tests/`: 360 passed (100% pass rate, 0 failed, 0 skipped).
+  > - CI test matrix (Python 3.11, 3.12, 3.13) fully aligned.
+
+### Fixed
+- **PDFLoader Exception Ordering:** Fixed `PDFLoader.load()` to check and raise descriptive `ImportError` for missing `pypdf` prior to raising `FileNotFoundError`.
+- **Test Skips and Failures in CI:** Eliminated non-deterministic `pytest.skip` in `test_pdf_loader_missing_dependency`, guaranteeing reproducible testing across all platforms.
+
+### Changed
+- **Version Bump:** `0.19.3` -> `0.19.4`.
+- **GitHub Workflows:** Updated action pins across `ci.yml`, `release.yml`, and `sonar.yml` to latest secure commit SHAs; resolved Dependabot PRs #2, #3, #4, #5, #6, #7.
+
+---
+
 ## [v0.19.3] - 2026-11-17
 
 ### Pull Request

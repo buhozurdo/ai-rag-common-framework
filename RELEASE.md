@@ -132,6 +132,40 @@ We adhere to [Semantic Versioning 2.0.0](https://semver.org/) and PEP 440:
 
 ## 🚀 Release History & Release Notes
 
+## v0.19.4: CI Stability, Dependency Action Pinned SHAs & PDFLoader Dependency Ordering
+
+> 🏷️ **Git Tag:** `v0.19.4` | 📅 **Release Date:** `2026-11-17` | 📦 **Release Channel:** `GA Patch`  
+> 🔀 **PR Title:** `release: v0.19.4 - CI Workflow Hardening & PDFLoader Dependency Precedence Fix`  
+> 📝 **PR Description:** Releases v0.19.4 resolving CI/CD dependency conflicts, bumping GitHub Actions to secure pinned SHAs, and fixing PDFLoader optional dependency precedence in headless environments.
+
+The `v0.19.4` patch release resolves CI execution failures in Linux runners, eliminates duplicate release workflows, and fixes the exception handling order when loading PDFs without `pypdf` installed.
+
+---
+
+### 🛡️ Bug Fixes & Resilience:
+* **PDFLoader Dependency Precedence:**
+  * Updated `PDFLoader.load()` in `src/common_framework/rag/loaders.py` to evaluate the optional `pypdf` import *before* asserting file existence.
+  * Ensures that when `pypdf` is missing in an environment, users and callers receive an informative, actionable `ImportError` instead of a misleading `FileNotFoundError`.
+* **Deterministic Test Isolation:**
+  * Decoupled `test_pdf_loader_missing_dependency` from the host environment via `unittest.mock.patch.dict(sys.modules, {"pypdf": None})` and temporary file fixtures, guaranteeing 100% test pass rate across local and remote CI runners with zero skips.
+  * Added `test_pdf_loader_file_not_found` with mocked dependency to verify file presence assertion.
+
+---
+
+### ⚙️ CI/CD Workflow Hardening:
+* **Dependabot Actions Pinning:**
+  * Unified GitHub Actions across `ci.yml`, `release.yml`, and `sonar.yml` to securely pinned commit SHAs:
+    * `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1` (#3)
+    * `actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0` (#5)
+    * `codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5` (#4)
+    * `actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9` (#6)
+    * `SonarSource/sonarqube-scan-action@59202af334b4ba7b5db01b701b8e79f8b3bef0f4` (#2)
+    * `softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3` (#7)
+* **Release Pipeline Deduplication:**
+  * Retained single consolidated release workflow in `release.yml` with provenance and checksum generation, preventing build discrepancies.
+
+---
+
 ## v0.19.3: SLA Benchmark Performance Optimization — Guardrails Fast-Path & Lock-Free Cost Ledger
 
 > 🏷️ **Git Tag:** `v0.19.3` | 📅 **Release Date:** `2026-11-17` | 🔗 **Target Commit:** `80258c2` | 📦 **Release Channel:** `GA Patch`  
