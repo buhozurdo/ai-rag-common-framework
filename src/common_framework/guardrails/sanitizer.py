@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import re
+import secrets
 from enum import Enum
 from typing import Optional, Sequence, Union
 from pydantic import BaseModel, Field
@@ -62,6 +63,8 @@ _PHONE_RE = re.compile(
     r"\+\d{1,4}[\s.-]?(?:\(?\d{1,4}\)?[\s.-]?)?\d{2,4}[\s.-]?\d{2,4}(?:[\s.-]?\d{2,4})?"
     r"|"
     r"(?:(?:\+?1\s*(?:[.-]\s*)?)?(?:\(\s*([2-9]1[02-9]|[2-9][02-8]1|[2-9][02-8][02-9])\s*\)|([2-9]1[02-9]|[2-9][02-8]1|[2-9][02-8][02-9]))\s*(?:[.-]\s*)?)?([2-9]1[02-9]|[2-9][02-9]1|[2-9][02-9]{2})\s*(?:[.-]\s*)?([0-9]{4})(?:\s*(?:#|x\.?|ext\.?|extension)\s*(\d+))?"
+    r"|"
+    r"\b[2-9]\d{2}[.-]\d{4}\b"
     r")",
     re.IGNORECASE,
 )
@@ -116,6 +119,7 @@ class PIISanitizer:
         self.enabled_types = set(enabled_types or list(PIIType))
         self.default_strategy = default_strategy
         self.hmac_key = hmac_key
+        self._default_salt = secrets.token_hex(16)
 
     def _generate_replacement(
         self,
@@ -127,11 +131,12 @@ class PIISanitizer:
             return f"[REDACTED_{entity_type.value.upper()}]"
 
         if strategy == RedactionStrategy.HASH:
-            if self.hmac_key:
-                k = self.hmac_key.encode("utf-8") if isinstance(self.hmac_key, str) else self.hmac_key
-                digest = hmac.new(k, raw_val.encode("utf-8"), hashlib.sha256).hexdigest()[:8]
-            else:
-                digest = hashlib.sha256(raw_val.encode("utf-8")).hexdigest()[:8]
+            key = (
+                self.hmac_key.encode("utf-8")
+                if isinstance(self.hmac_key, str)
+                else (self.hmac_key or self._default_salt.encode("utf-8"))
+            )
+            digest = hmac.new(key, raw_val.encode("utf-8"), hashlib.sha256).hexdigest()[:12]
             return f"[HASH:{digest}]"
 
         if strategy == RedactionStrategy.MASK:
@@ -257,13 +262,13 @@ class PIISanitizer:
                     )
                 )
 
-        # 6. Phone Numbers (only scan if text has >= 10 digits)
-        if PIIType.PHONE in self.enabled_types and digit_count >= 10:
+        # 6. Phone Numbers (scan if text has >= 7 digits)
+        if PIIType.PHONE in self.enabled_types and digit_count >= 7:
             for match in _PHONE_RE.finditer(text):
                 val = match.group(0).strip()
                 # Ensure minimum digit count to avoid matching simple numbers
                 digits = [c for c in val if c.isdigit()]
-                if 10 <= len(digits) <= 15:
+                if 7 <= len(digits) <= 15:
                     entities.append(
                         PIIEntity(
                             entity_type=PIIType.PHONE,

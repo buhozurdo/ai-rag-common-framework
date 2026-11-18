@@ -6,6 +6,7 @@ Orchestrator-Workers hierarchy routing subtasks to specialized agents with a sha
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 import re
@@ -40,12 +41,18 @@ class AgentBus:
 
     def __init__(self, initial_state: Optional[dict[str, Any]] = None) -> None:
         self._data: dict[str, Any] = dict(initial_state or {})
+        self._history: dict[str, list[Any]] = {k: [v] for k, v in self._data.items()}
 
     def get(self, key: str, default: Any = None) -> Any:
         return self._data.get(key, default)
 
+    def get_history(self, key: str) -> list[Any]:
+        """Return all historical values recorded for the given key in chronological order."""
+        return list(self._history.get(key, []))
+
     def set(self, key: str, value: Any) -> None:
         self._data[key] = value
+        self._history.setdefault(key, []).append(value)
 
     def to_dict(self) -> dict[str, Any]:
         return dict(self._data)
@@ -61,6 +68,7 @@ class AgentSupervisor:
         bus: Optional[AgentBus] = None,
         max_steps: int = 5,
         system_prompt: Optional[str] = None,
+        completion_guardrail: Optional[Any] = None,
     ) -> None:
         """Initialize supervisor with registered worker agents.
 
@@ -70,12 +78,14 @@ class AgentSupervisor:
             bus: Shared state bus. Defaults to a new empty AgentBus.
             max_steps: Maximum delegation rounds before forcing final conclusion.
             system_prompt: Optional override for supervisor decision prompt.
+            completion_guardrail: Optional guardrail to verify final answer before completing.
         """
         self.agents = agents
         self.llm = llm_client or LLMFactory.create()
         self.bus = bus or AgentBus()
         self.max_steps = max_steps
         self.system_prompt = system_prompt
+        self.completion_guardrail = completion_guardrail
 
     def _build_system_prompt(self) -> str:
         if self.system_prompt:
@@ -100,16 +110,34 @@ class AgentSupervisor:
 
         # Case 1: ReActAgent or object with async run()
         if hasattr(worker, "run") and callable(worker.run):
-            res = worker.run(task)
+            run_kwargs: dict[str, Any] = {}
+            try:
+                sig = inspect.signature(worker.run)
+                if "bus" in sig.parameters:
+                    run_kwargs["bus"] = self.bus
+                elif "context" in sig.parameters:
+                    run_kwargs["context"] = self.bus.to_dict()
+            except (ValueError, TypeError):
+                pass
+            res = worker.run(task, **run_kwargs)
             if asyncio.iscoroutine(res):
                 res = await res
             return getattr(res, "output", getattr(res, "answer", str(res)))
 
-        # Case 2: Async callable
+        # Case 2: Async or sync callable
         if callable(worker):
+            call_kwargs: dict[str, Any] = {}
+            try:
+                sig = inspect.signature(worker)
+                if "bus" in sig.parameters:
+                    call_kwargs["bus"] = self.bus
+                elif "context" in sig.parameters:
+                    call_kwargs["context"] = self.bus.to_dict()
+            except (ValueError, TypeError):
+                pass
             if asyncio.iscoroutinefunction(worker):
-                return str(await worker(task))
-            return str(worker(task))
+                return str(await worker(task, **call_kwargs))
+            return str(worker(task, **call_kwargs))
 
         return str(worker)
 
@@ -155,6 +183,7 @@ class AgentSupervisor:
 
                     # Update shared state and logs
                     self.bus.set(agent_name, worker_output)
+                    self.bus.set(f"{agent_name}_step_{step_idx}", worker_output)
                     delegations.append(
                         DelegationStep(
                             step=step_idx,
@@ -174,6 +203,15 @@ class AgentSupervisor:
             # Check for FINAL_ANSWER when no active delegation
             if final_match:
                 final_answer = final_match.group(1).strip()
+                if self.completion_guardrail is not None:
+                    review = self.completion_guardrail.verify(final_answer, state=self.bus.to_dict())
+                    if asyncio.iscoroutine(review):
+                        review = await review
+                    if not getattr(review, "passed", True):
+                        history_log.append(
+                            f"Step {step_idx}: Pre-completion guardrail failed: {getattr(review, 'reason', 'Policy violation')}"
+                        )
+                        continue
                 return SupervisorResponse(
                     final_answer=final_answer,
                     iterations=step_idx,

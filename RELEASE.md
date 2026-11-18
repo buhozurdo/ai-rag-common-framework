@@ -45,6 +45,9 @@ We adhere to [Semantic Versioning 2.0.0](https://semver.org/) and PEP 440:
 
 | Git Tag | Release Date | Target Commit | Channel | Release Summary |
 | :--- | :---: | :---: | :---: | :--- |
+| [`v0.19.6`](#v0196-pre-completion-bug-audit-guardrails-agent-self-correction--security-hardening) | 2026-11-18 | `HEAD` | **Patch** | Pre-Completion Bug Audit Guardrails, Agent Self-Correction & Security Hardening |
+| [`v0.19.5`](#v0195-p1-audit-hardening-eviction-optimization--hybrid-search-metadata-fix) | 2026-11-18 | `HEAD` | **Patch** | P1 Audit Hardening, Eviction Optimization & Hybrid Search Metadata Fix |
+| [`v0.19.4`](#v0194-ci-stability-dependency-action-pinned-shas--pdfloader-dependency-ordering) | 2026-11-17 | `HEAD` | **Patch** | CI Stability, Dependency Action Pinned SHAs & PDFLoader Dependency Ordering |
 | [`v0.19.3`](#v0193-sla-benchmark-performance-optimization--guardrails-fast-path--lock-free-cost-ledger) | 2026-11-17 | `80258c2` | **Patch** | SLA Benchmark Performance Optimization (Guardrails Fast-Path & Lock-Free Cost Ledger) |
 | [`v0.19.2`](#v0192-critical-security-remediation-ci-hardening--enterprise-audit-fixes) | 2026-11-17 | `80258c2` | **Patch** | Critical Security Remediation, CI Hardening & Enterprise Audit Fixes |
 | [`v0.19.1`](#v0191-cicd-pipeline-automation-test-matrix-hardening--pypi-publishing) | 2026-11-16 | `5e0d915` | **Patch** | CI/CD Pipeline Automation, Test Matrix Hardening & PyPI Publishing |
@@ -131,6 +134,56 @@ We adhere to [Semantic Versioning 2.0.0](https://semver.org/) and PEP 440:
 ---
 
 ## 🚀 Release History & Release Notes
+
+## v0.19.6: Pre-Completion Bug Audit Guardrails, Agent Self-Correction & Security Hardening
+
+> 🏷️ **Git Tag:** `v0.19.6` | 📅 **Release Date:** `2026-11-18` | 📦 **Release Channel:** `GA Patch`  
+> 🔀 **PR Title:** `release: v0.19.6 - Pre-Completion Bug Audit Guardrail, Agent Self-Correction & Security Hardening`  
+> 📝 **PR Description:** Releases v0.19.6 delivering autonomous pre-completion verification guardrails for defect analysis and bug detection, agent self-correction feedback loops, salted PII HMAC masking, RAG endpoint payload bounding, and agent bus history preservation.
+
+The `v0.19.6` patch release introduces specialized guardrails that search for, analyze, and verify implementation code and agent responses against architectural bugs, security vulnerabilities, and syntax defects before completing any task. Furthermore, it hardens RAG routes against memory-exhaustion DoS, adds salted HMAC masking for PII, and preserves agent delegation history.
+
+---
+
+### 🛡️ Pre-Completion Defect & Security Verification Guardrails:
+* **Autonomous Defect Search & AST Verification (`BugAuditGuardrail`):**
+  * Implemented in `src/common_framework/guardrails/bug_audit.py`.
+  * Verifies Python code blocks via AST syntax trees and detects syntax errors or malformed code before execution.
+  * Scans for high-risk defect patterns:
+    * Unvalidated SSRF requests (detects `httpx.get/post/request` calls lacking safe address resolution or SSRF checks).
+    * Silent exception swallowing (`except Exception: pass`).
+    * Unbounded Pydantic request payloads (detects missing `max_length` constraints on API string inputs).
+    * Unanchored agent protocol triggers (detects loose substring matching rather than anchored or line-based tokens).
+    * Directory traversal (detects unsanitized string concatenations used as filesystem paths).
+* **Agent Pre-Completion Self-Correction Loop:**
+  * Integrated `completion_guardrail` parameter into `ReActAgent` and `AgentSupervisor`.
+  * When an agent attempts to finalize an answer or emit executable code, `PreCompletionGuardrail.verify()` inspects the artifact.
+  * If violations or defects are found, the completion is rejected and precise, actionable remediation guidance is fed directly back into the agent's thought scratchpad for iterative self-correction prior to returning to the caller.
+* **Unified CLI Audit Tooling:**
+  * Added `ai-rag audit [path] [--strict] [--json]` subcommand to scan source codebases and report defects with recommended remediations.
+
+---
+
+### 🔒 Enterprise Security & Reliability Hardening:
+* **Salted PII Anonymization & Local Phone Coverage (P1-22):**
+  * Added dynamic 16-byte random salt (`secrets.token_hex(16)`) to HMAC masking when no static key is provided, preventing rainbow-table precomputations against masked entities.
+  * Extended phone digit pre-filtering threshold down to $\ge 7$ digits and added regex coverage for 7-digit local phone numbers (`\b[2-9]\d{2}[.-]\d{4}\b`).
+* **RAG Endpoint DoS Payload Bounding (P1-24):**
+  * Added `Field(max_length=10_000)` on `query` and `system_prompt` in `RAGQueryRequest` and `RAGRetrieveRequest`.
+  * Added `Field(max_length=128)` on `collection` and `model`.
+  * Added `Field(max_length=1_000)` on `texts` in `RAGIngestRequest`.
+* **AgentBus Delegation History Preservation (P1-20):**
+  * Added `_history` dictionary and `get_history(key)` method to `AgentBus` so repeated delegations to workers retain all intermediate execution outputs.
+  * Enhanced `AgentSupervisor._execute_worker()` to introspect worker signatures and supply `bus` or `context` when accepted.
+
+---
+
+### 🧪 Test Suite Metrics:
+* **373 tests passing (100% pass rate, 0 failed, 0 skipped)**.
+* Global coverage maintained across all core modules.
+* Static defect audit: `ai-rag audit src` reports 0 blocking issues.
+
+---
 
 ## v0.19.5: P1 Audit Hardening, Eviction Optimization & Hybrid Search Metadata Fix
 

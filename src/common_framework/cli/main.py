@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 import sys
 from typing import Optional, Sequence
 
@@ -56,6 +57,16 @@ def create_parser() -> argparse.ArgumentParser:
 
     # 6. repl
     subparsers.add_parser("repl", help="Launch interactive developer playground and tool terminal")
+
+    # 7. audit
+    audit_parser = subparsers.add_parser(
+        "audit",
+        help="Search, analyze, and verify implementation code against defect and vulnerability guardrails",
+    )
+    audit_parser.add_argument("target", nargs="?", default=".", help="File or directory path to audit (default: .)")
+    audit_parser.add_argument("--path", dest="path_opt", default=None, help="Explicit path override")
+    audit_parser.add_argument("--strict", action="store_true", help="Fail verification on any warning or finding")
+    audit_parser.add_argument("--json", action="store_true", help="Output findings in JSON format")
 
     return parser
 
@@ -131,6 +142,41 @@ def handle_repl() -> int:
     return 0
 
 
+def handle_audit(args: argparse.Namespace) -> int:
+    from common_framework.guardrails.bug_audit import BugAuditGuardrail
+    engine = BugAuditGuardrail(strict=args.strict)
+    target_path = args.path_opt or args.target or "."
+    p = Path(target_path).resolve()
+    if p.is_file():
+        findings = engine.scan_file(p)
+    else:
+        findings = engine.scan_directory(p)
+
+    counts: dict[str, int] = {}
+    for f in findings:
+        counts[f.severity.value] = counts.get(f.severity.value, 0) + 1
+
+    if args.json:
+        print(json.dumps([f.model_dump() for f in findings], indent=2))
+        return 1 if any(f.severity.value in ("critical", "high") or (args.strict and findings) for f in findings) else 0
+
+    print(f"=== Implementation Bug & Security Audit ({len(findings)} findings) ===")
+    for f in findings:
+        loc = f"{f.file_path}:{f.line_number}" if f.line_number else f.file_path
+        print(f"[{f.severity.value.upper()}] {f.title} ({loc})")
+        print(f"   Fix: {f.remediation}")
+
+    if any(f.severity.value in ("critical", "high") for f in findings):
+        print(f"\nAudit failed: blocking issues detected ({counts}).")
+        return 1
+    if args.strict and findings:
+        print(f"\nAudit failed in strict mode with {len(findings)} finding(s).")
+        return 1
+
+    print("\nAudit passed successfully: 0 blocking defects found.")
+    return 0
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     """CLI application entry point."""
     parser = create_parser()
@@ -152,6 +198,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return handle_run_mcp(args)
     if args.command == "repl":
         return handle_repl()
+    if args.command == "audit":
+        return handle_audit(args)
 
     parser.print_help()
     return 0

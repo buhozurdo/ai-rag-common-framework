@@ -22,8 +22,8 @@ logger = logging.getLogger("common_framework.api.rag")
 class RAGQueryRequest(BaseModel):
     """Payload for full RAG retrieval and synthesis."""
 
-    query: str = Field(..., min_length=1, description="User question or query string")
-    collection: str = Field(default="default", description="Target collection/namespace name")
+    query: str = Field(..., min_length=1, max_length=10_000, description="User question or query string")
+    collection: str = Field(default="default", max_length=128, description="Target collection/namespace name")
     top_k: int = Field(default=4, ge=1, le=100, description="Number of context chunks to retrieve")
     mode: Literal["hybrid", "dense"] = Field(
         default="hybrid", description="Search mode: 'hybrid' (vector + BM25) or 'dense' (vector only)"
@@ -32,10 +32,10 @@ class RAGQueryRequest(BaseModel):
         default=None, description="Key-value filters that document metadata must match"
     )
     system_prompt: Optional[str] = Field(
-        default=None, description="Optional custom system prompt instructing the LLM synthesis"
+        default=None, max_length=10_000, description="Optional custom system prompt instructing the LLM synthesis"
     )
     model: Optional[str] = Field(
-        default=None, description="Optional LLM model override"
+        default=None, max_length=128, description="Optional LLM model override"
     )
     temperature: Optional[float] = Field(
         default=None, ge=0.0, le=2.0, description="Sampling temperature for synthesis"
@@ -45,8 +45,8 @@ class RAGQueryRequest(BaseModel):
 class RAGRetrieveRequest(BaseModel):
     """Payload for retrieving document chunks without LLM synthesis."""
 
-    query: str = Field(..., min_length=1, description="Search query string")
-    collection: str = Field(default="default", description="Target collection/namespace name")
+    query: str = Field(..., min_length=1, max_length=10_000, description="Search query string")
+    collection: str = Field(default="default", max_length=128, description="Target collection/namespace name")
     top_k: int = Field(default=4, ge=1, le=100, description="Number of results to retrieve")
     mode: Literal["hybrid", "dense"] = Field(
         default="hybrid", description="Search mode: 'hybrid' (vector + BM25) or 'dense' (vector only)"
@@ -59,8 +59,8 @@ class RAGRetrieveRequest(BaseModel):
 class RAGIngestRequest(BaseModel):
     """Payload for ingesting raw text strings into a collection."""
 
-    texts: list[str] = Field(..., min_length=1, description="List of text chunks to embed and store")
-    collection: str = Field(default="default", description="Target collection/namespace name")
+    texts: list[str] = Field(..., min_length=1, max_length=1_000, description="List of text chunks to embed and store")
+    collection: str = Field(default="default", max_length=128, description="Target collection/namespace name")
     metadatas: Optional[list[dict[str, Any]]] = Field(
         default=None, description="Optional list of metadata dicts corresponding to texts"
     )

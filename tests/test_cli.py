@@ -300,3 +300,7 @@ def test_cli_dispatch_subcommands(tmp_path):
         assert cli_main(["repl"]) == 0
         mock_run.assert_called_once()
 
+    # 4. Audit command invocation
+    assert cli_main(["audit", str(tmp_path)]) == 0
+    assert cli_main(["audit", "--path", str(tmp_path), "--strict"]) == 0
+

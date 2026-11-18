@@ -4,6 +4,43 @@ All notable changes to this project are documented in this file following [Keep 
 
 ---
 
+## [v0.19.6] - 2026-11-18
+
+### Pull Request
+- **PR Title:** `release: v0.19.6 - Pre-Completion Bug Audit Guardrail, Agent Self-Correction & Security Hardening`
+- **PR Description:**
+  > ### Summary
+  > Releases `v0.19.6` delivering autonomous pre-completion verification guardrails for defect analysis and bug detection, agent self-correction feedback loops, salted PII HMAC masking, RAG endpoint payload bounding, and agent bus history preservation.
+  >
+  > ### Key Changes
+  > - **Pre-Completion Bug Search & Verification Guardrail:** Implemented `BugAuditGuardrail` and `PreCompletionGuardrail` in `common_framework.guardrails.bug_audit`. Evaluates AST syntax correctness and scans for common enterprise defects (unvalidated SSRF, silent exception swallowing, unbounded request payloads, unanchored protocol triggers, and directory traversal).
+  > - **Agent Self-Correction Integration:** Integrated `completion_guardrail` into `ReActAgent` and `AgentSupervisor`. If generated code or final answers violate guardrails, rejection feedback is injected directly back into the agent's thought scratchpad for autonomous correction before task completion.
+  > - **Unified CLI Audit Subcommand:** Added `ai-rag audit` subcommand with positional path, `--strict`, and `--json` flags to scan source trees for implementation defects.
+  > - **AgentBus History Preservation (P1-20):** Added `_history` tracking and `get_history(key)` method to `AgentBus` so multi-turn delegations retain all intermediate outputs. Supervisor worker execution introspects function signatures to pass `bus` or `context` dynamically.
+  > - **Salted PII Anonymization & Local Phone Coverage (P1-22):** Added dynamic secret salt (`secrets.token_hex(16)`) and 12-char HMAC-SHA256 digest when `hmac_key` is omitted to eliminate rainbow-table reversibility. Expanded phone digit pre-filtering to $\ge 7$ digits and added regex coverage for 7-digit local phone numbers (`\b[2-9]\d{2}[.-]\d{4}\b`).
+  > - **RAG API DoS Bounds (P1-24):** Added explicit `max_length` bounds across `RAGQueryRequest`, `RAGRetrieveRequest`, and `RAGIngestRequest` to prevent memory exhaustion DoS vectors.
+  >
+  > ### Verification
+  > - `pytest tests/`: 373 passed in 9.13s (100% pass rate, 0 failed, 0 skipped).
+  > - Static code audit: `ai-rag audit src` reports 0 blocking issues.
+  > - Dedicated test suite added: `tests/test_bug_audit_guardrails.py`.
+
+### Added
+- **Bug Audit Guardrails:** `BugAuditGuardrail`, `PreCompletionGuardrail`, `BugFinding`, and `VerificationResult` in `common_framework.guardrails.bug_audit`.
+- **Pre-Completion Hooks:** `completion_guardrail` parameter in `ReActAgent` and `AgentSupervisor` with iterative revision on rejection.
+- **CLI Audit Command:** `ai-rag audit [path] [--path PATH] [--strict] [--json]`.
+- **AgentBus History API:** `AgentBus.get_history(key)` for full intermediate delegation traceability.
+
+### Security
+- **Salted PII Hash:** Dynamic 16-byte random salt prevents offline rainbow-table brute force when anonymizing PII tokens without a fixed HMAC key.
+- **Phone Pattern Expansion:** 7-digit local telephone detection with pre-filter lowering to 7 digits.
+- **RAG Route Payload Bounds:** Protected `/rag/query`, `/rag/retrieve`, and `/rag/ingest` against memory exhaustion DoS with explicit `Field(max_length=...)` bounds.
+
+### Changed
+- **Version Bump:** `0.19.5` -> `0.19.6`.
+
+---
+
 ## [v0.19.5] - 2026-11-18
 
 ### Pull Request

@@ -84,6 +84,7 @@ class ReActAgent:
         approval_hook: Optional[BaseApprovalHook] = None,
         max_iterations: int = 8,
         system_prompt: Optional[str] = None,
+        completion_guardrail: Optional[Any] = None,
     ) -> None:
         self.llm_client = llm_client or LLMFactory.create()
         if isinstance(tools, ToolRegistry):
@@ -99,6 +100,7 @@ class ReActAgent:
         self.approval_hook = approval_hook
         self.max_iterations = max_iterations
         self.system_prompt_template = system_prompt or DEFAULT_REACT_SYSTEM_PROMPT
+        self.completion_guardrail = completion_guardrail
 
     def _build_tools_description(self) -> tuple[str, str]:
         all_tools = self.registry.list_tools()
@@ -231,6 +233,17 @@ class ReActAgent:
 
             # Case 1: Final answer reached
             if final_answer is not None:
+                if self.completion_guardrail is not None:
+                    review = self.completion_guardrail.verify(final_answer, steps=scratchpad)
+                    if asyncio.iscoroutine(review):
+                        review = await review
+                    if not getattr(review, "passed", True):
+                        reason = getattr(review, "reason", "Pre-completion guardrail failed.")
+                        scratchpad.append(
+                            f"Thought: Final Answer rejected by pre-completion guardrail: {reason}. I must revise."
+                        )
+                        continue
+
                 # Persist completed turn to memory
                 await self.memory.add_message(ChatMessage(role=Role.USER, content=query))
                 await self.memory.add_message(ChatMessage(role=Role.ASSISTANT, content=final_answer))
