@@ -1,8 +1,10 @@
 """Comprehensive unit tests for native Document Loaders (RAG milestone v0.20.0)."""
 
 import os
+import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 import pytest
 
 from common_framework.rag.loaders import (
@@ -178,14 +180,19 @@ def test_directory_loader_recursive(tmp_path: Path):
     assert filenames == {"file1.txt", "file2.md", "file3.html"}
 
 
-def test_pdf_loader_missing_dependency():
-    loader = PDFLoader("dummy.pdf")
-    # If pypdf is not installed, it raises informative ImportError
-    try:
-        import pypdf
-        pytest.skip("pypdf is installed, skipping missing dep test")
-    except ImportError:
+def test_pdf_loader_missing_dependency(tmp_path: Path):
+    dummy_pdf = tmp_path / "dummy.pdf"
+    dummy_pdf.write_bytes(b"%PDF-1.4 dummy content")
+    loader = PDFLoader(dummy_pdf)
+    with patch.dict(sys.modules, {"pypdf": None}):
         with pytest.raises(ImportError, match="pypdf"):
+            loader.load()
+
+
+def test_pdf_loader_file_not_found(tmp_path: Path):
+    loader = PDFLoader(tmp_path / "non_existent.pdf")
+    with patch.dict(sys.modules, {"pypdf": MagicMock()}):
+        with pytest.raises(FileNotFoundError, match="File not found"):
             loader.load()
 
 

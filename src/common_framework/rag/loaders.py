@@ -351,9 +351,6 @@ class PDFLoader(BaseLoader):
         self.extract_pages = extract_pages
 
     def load(self) -> list[Document]:
-        if not self.file_path.exists():
-            raise FileNotFoundError(f"File not found: {self.file_path}")
-
         try:
             import pypdf
         except ImportError as exc:
@@ -361,6 +358,9 @@ class PDFLoader(BaseLoader):
                 "PDFLoader requires 'pypdf' to be installed. "
                 "Install it using: pip install pypdf"
             ) from exc
+
+        if not self.file_path.exists():
+            raise FileNotFoundError(f"File not found: {self.file_path}")
 
         documents: list[Document] = []
         reader = pypdf.PdfReader(str(self.file_path))
