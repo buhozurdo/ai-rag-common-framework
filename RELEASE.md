@@ -45,7 +45,7 @@ We adhere to [Semantic Versioning 2.0.0](https://semver.org/) and PEP 440:
 
 | Git Tag | Release Date | Target Commit | Channel | Release Summary |
 | :--- | :---: | :---: | :---: | :--- |
-| [`v0.19.7`](#v0197-p1-audit-remediation-bug-22-to-bug-27-lru-filter-bounding-fail-close-hitl--path-security) | 2026-11-18 | `HEAD` | **Patch** | P1 Audit Remediation (BUG-22 to BUG-27), LRU Filter Bounding, Fail-Close HITL & Path Security |
+| [`v0.19.7`](#v0197-p1-audit-remediation-bug-22-to-bug-27-lru-filter-bounding-fail-close-hitl--path-security) | 2026-11-18 | `55aa110` | **Patch** | P1 Audit Remediation (BUG-22 to BUG-27), LRU Filter Bounding, Fail-Close HITL & Path Security |
 | [`v0.19.6`](#v0196-pre-completion-bug-audit-guardrails-agent-self-correction--security-hardening) | 2026-11-18 | `837382f` | **Patch** | Pre-Completion Bug Audit Guardrails, Agent Self-Correction & Security Hardening |
 | [`v0.19.5`](#v0195-p1-audit-hardening-eviction-optimization--hybrid-search-metadata-fix) | 2026-11-18 | `3392485` | **Patch** | P1 Audit Hardening, Eviction Optimization & Hybrid Search Metadata Fix |
 | [`v0.19.4`](#v0194-ci-stability-dependency-action-pinned-shas--pdfloader-dependency-ordering) | 2026-11-17 | `f41d13f` | **Patch** | CI Stability, Dependency Action Pinned SHAs & PDFLoader Dependency Ordering |
@@ -138,7 +138,7 @@ We adhere to [Semantic Versioning 2.0.0](https://semver.org/) and PEP 440:
 
 ## v0.19.7: P1 Audit Remediation (BUG-22 to BUG-27), LRU Filter Bounding, Fail-Close HITL & Path Security
 
-> 🏷️ **Git Tag:** `v0.19.7` | 📅 **Release Date:** `2026-11-18` | 🔗 **Target Commit:** `HEAD` | 📦 **Release Channel:** `GA Patch`  
+> 🏷️ **Git Tag:** `v0.19.7` | 📅 **Release Date:** `2026-11-18` | 🔗 **Target Commit:** `55aa110` | 📦 **Release Channel:** `GA Patch`  
 > 🔀 **PR Title:** `release: v0.19.7 - P1 Audit Remediation (BUG-22 to BUG-27), LRU Filter Bounding, Fail-Close HITL & Path Security`  
 > 📝 **PR Description:** Releases v0.19.7 resolving P1 audit bugs BUG-22 through BUG-27 tracked in the local Project Manager: kwargs safety in LLMFactory, bounded LRU filter index containment, nested unhashable metadata filtering, cross-loop deadlock prevention, strict Fail-Close HITL enforcement, and filesystem path traversal hardening.
 
