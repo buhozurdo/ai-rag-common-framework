@@ -139,18 +139,10 @@ class AgentSupervisor:
             llm_res = await self.llm.complete(messages)
             content = llm_res.content.strip()
 
-            # Check for FINAL_ANSWER
-            if "FINAL_ANSWER:" in content:
-                final_answer = content.split("FINAL_ANSWER:", 1)[1].strip()
-                return SupervisorResponse(
-                    final_answer=final_answer,
-                    iterations=step_idx,
-                    delegations=delegations,
-                    state=self.bus.to_dict(),
-                )
+            # Check for DELEGATE or anchored FINAL_ANSWER
+            delegate_match = re.search(r"(?:^|\n)DELEGATE:\s*([^|\n]+?)\s*\|\s*(.+?)(?=\n(?:DELEGATE|FINAL_ANSWER):|$)", content, re.DOTALL)
+            final_match = re.search(r"(?:^|\n)FINAL_ANSWER:\s*(.+)", content, re.DOTALL)
 
-            # Check for DELEGATE
-            delegate_match = re.search(r"DELEGATE:\s*([^|\n]+?)\s*\|\s*(.+)", content, re.DOTALL)
             if delegate_match:
                 agent_name = delegate_match.group(1).strip()
                 subtask = delegate_match.group(2).strip()
@@ -178,6 +170,16 @@ class AgentSupervisor:
                         f"Step {step_idx}: Failed - worker '{agent_name}' not found. Available: {list(self.agents.keys())}"
                     )
                     continue
+
+            # Check for FINAL_ANSWER when no active delegation
+            if final_match:
+                final_answer = final_match.group(1).strip()
+                return SupervisorResponse(
+                    final_answer=final_answer,
+                    iterations=step_idx,
+                    delegations=delegations,
+                    state=self.bus.to_dict(),
+                )
 
             # Fallback when LLM did not follow format
             history_log.append(f"Step {step_idx}: Output did not follow DELEGATE or FINAL_ANSWER format.")

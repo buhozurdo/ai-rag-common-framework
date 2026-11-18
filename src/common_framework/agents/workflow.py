@@ -98,16 +98,19 @@ class StateGraph:
         for src, (_, path_map) in self._conditional_edges.items():
             if src not in self._nodes:
                 raise ValueError(f"Conditional edge source '{src}' is not registered in graph nodes.")
+            if src in self._edges:
+                raise ValueError(f"Conflicting edges: node '{src}' has both a static edge and a conditional edge.")
             if path_map:
                 for target in path_map.values():
                     if target != END and target not in self._nodes:
                         raise ValueError(f"Conditional edge target '{target}' from '{src}' is not registered.")
 
     async def _invoke_callable(self, fn: Callable[..., Any], *args: Any) -> Any:
-        """Safely invoke sync or async callables."""
+        """Safely invoke sync or async callables without blocking the event loop."""
         if inspect.iscoroutinefunction(fn):
             return await fn(*args)
-        res = fn(*args)
+        loop = asyncio.get_running_loop()
+        res = await loop.run_in_executor(None, fn, *args)
         if asyncio.iscoroutine(res):
             return await res
         return res
@@ -143,7 +146,7 @@ class StateGraph:
             iterations += 1
             node_fn = self._nodes.get(current_node)
             if not node_fn:
-                break
+                raise ValueError(f"Workflow execution reached unregistered node '{current_node}'.")
 
             t0 = time.perf_counter()
             # Deepcopy state to prevent uncontrolled in-place mutation and retroactively mutating snapshots

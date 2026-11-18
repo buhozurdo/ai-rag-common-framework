@@ -30,6 +30,13 @@ class Settings(BaseSettings):
         description="Application logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
     )
 
+    @field_validator("default_provider", "framework_env", mode="before")
+    @classmethod
+    def _normalize_case(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            return v.lower().strip()
+        return v
+
     # LLM Provider defaults
     default_provider: Literal[
         "gemini", "openai", "anthropic", "ollama", "deepseek", "groq", "vllm", "custom", "generic"

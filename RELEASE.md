@@ -132,6 +132,40 @@ We adhere to [Semantic Versioning 2.0.0](https://semver.org/) and PEP 440:
 
 ## 🚀 Release History & Release Notes
 
+## v0.19.5: P1 Audit Hardening, Eviction Optimization & Hybrid Search Metadata Fix
+
+> 🏷️ **Git Tag:** `v0.19.5` | 📅 **Release Date:** `2026-11-18` | 📦 **Release Channel:** `GA Patch`  
+> 🔀 **PR Title:** `release: v0.19.5 - P1 Audit Hardening, Eviction Optimization & Hybrid Search Metadata Fix`  
+> 📝 **PR Description:** Releases v0.19.5 resolving key P1 audit findings across semantic caching performance, SQLite hybrid search candidate filtering, workflow event loop concurrency, and supervisor decision parsing.
+
+The `v0.19.5` patch release eliminates performance bottlenecks in semantic cache eviction and strengthens correctness across SQLite RAG hybrid search, multi-agent supervision, and StateGraph asynchronous workflow execution.
+
+---
+
+### ⚡ Performance & Throughput Enhancements:
+* **SemanticCache Eviction Optimization (P1-3):**
+  * Memoized byte calculation in `SemanticCacheEntry` via `_cached_bytes: Optional[int] = PrivateAttr(default=None)`, avoiding redundant JSON encodings and byte scans on accessed entries.
+  * Replaced repeated O(K * N log N) eviction loops with single-pass sort, O(1) slice removal for count capacity, and running memory subtraction for byte budget containment.
+* **Non-Blocking Asynchronous StateGraph Callables (P1-18):**
+  * Offloaded synchronous node functions to `loop.run_in_executor(None, fn, *args)` within `StateGraph._invoke_callable()`, preventing long-running CPU or blocking I/O calls from stalling the main asyncio event loop.
+
+---
+
+### 🛡️ Bug Fixes & Resilient Architecture:
+* **SQLite Hybrid Search Filtering (P1-13):**
+  * Removed premature SQL `LIMIT ?` in FTS5 query when `filter_metadata` is supplied, preventing high-ranking non-matching documents from starving out matching documents prior to metadata verification.
+* **VectorMemory Collection Purging (P1-21):**
+  * Added `collection: Optional[str] = None` support to `InMemoryVectorStore.clear()` and `SQLiteVectorStore.clear()`, allowing scoped collection deletion.
+  * Updated `VectorMemory.clear()` to purge its associated vector collection safely without `TypeError` argument mismatches.
+* **Settings Case Normalization (P1-8):**
+  * Added `@field_validator` on `default_provider` and `framework_env` in `Settings` to automatically normalize strings to lowercase, preventing Pydantic literal validation errors on uppercase environment variables (e.g. `DEFAULT_LLM_PROVIDER=OPENAI`).
+* **Multi-Agent Supervisor Parsing (P1-17):**
+  * Line-anchored `FINAL_ANSWER:` detection with regex and prioritized `DELEGATE:` commands over reasoning text mentions, preventing premature loop exits when the supervisor discusses final answers in its thought process.
+* **StateGraph Missing Node Validation (P1-19):**
+  * Added validation ensuring missing or unregistered transition nodes trigger an explicit `ValueError` rather than silently halting execution.
+
+---
+
 ## v0.19.4: CI Stability, Dependency Action Pinned SHAs & PDFLoader Dependency Ordering
 
 > 🏷️ **Git Tag:** `v0.19.4` | 📅 **Release Date:** `2026-11-17` | 📦 **Release Channel:** `GA Patch`  

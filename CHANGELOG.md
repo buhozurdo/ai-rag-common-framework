@@ -4,6 +4,41 @@ All notable changes to this project are documented in this file following [Keep 
 
 ---
 
+## [v0.19.5] - 2026-11-18
+
+### Pull Request
+- **PR Title:** `release: v0.19.5 - P1 Audit Hardening, Eviction Optimization & Hybrid Search Metadata Fix`
+- **PR Description:**
+  > ### Summary
+  > Releases `v0.19.5` resolving key P1 audit findings across semantic caching performance, SQLite hybrid search candidate filtering, workflow event loop concurrency, and supervisor decision parsing.
+  >
+  > ### Key Changes
+  > - **Cache Eviction Performance (P1-3):** Memoized byte estimation in `SemanticCacheEntry` with `_cached_bytes` to avoid repeated JSON re-serialization during capacity checks. Optimized `_enforce_capacity()` with single-pass sort, O(1) slice truncation, and running byte count accounting.
+  > - **Config Case Normalization (P1-8):** Added `@field_validator` on `Settings.default_provider` and `framework_env` to normalize input case, preventing framework startup failures when environment variables use uppercase (e.g. `DEFAULT_LLM_PROVIDER=OPENAI`).
+  > - **SQLite Hybrid Search Filtering (P1-13):** Fixed FTS5 BM25 early LIMIT truncation in `SQLiteVectorStore.hybrid_search()` when `filter_metadata` is provided, ensuring matching documents are retrieved without being dropped by pre-filter limits.
+  > - **Supervisor Robustness (P1-17):** Line-anchored `FINAL_ANSWER:` detection and prioritized `DELEGATE:` actions to prevent premature supervisor loop termination on reasoning thought mentions.
+  > - **Non-blocking StateGraph Callables (P1-18 & P1-19):** Offloaded synchronous node functions to `loop.run_in_executor()` in `StateGraph._invoke_callable()` to prevent asyncio event loop starvation, and added explicit `ValueError` validation when router transitions to unregistered nodes.
+  > - **VectorMemory Purge & Collection Alignment (P1-21):** Aligned `clear(collection)` signature across `InMemoryVectorStore`, `SQLiteVectorStore`, and `VectorMemory` to cleanly purge scoped memories without argument mismatch crashes.
+  >
+  > ### Verification
+  > - `pytest tests/`: 366 passed in 9.38s (100% pass rate, 0 failed, 0 skipped).
+  > - Added dedicated test suite `tests/test_p1_fixes.py`.
+
+### Performance
+- **SemanticCache Eviction:** Eliminated O(K * N log N) repeated sort and byte recalculation during cache eviction down to single-pass O(N).
+- **StateGraph Concurrency:** Prevented thread-blocking delays on the main asyncio loop by running sync callables in the default thread pool executor.
+
+### Fixed
+- **SQLite Hybrid Search:** Fixed candidate starvation bug where SQL `LIMIT` dropped matching documents prior to Python metadata evaluation.
+- **VectorMemory Clear:** Fixed `TypeError` on `VectorMemory.clear()` when calling `vector_store.clear(collection)`.
+- **Config Initialization:** Prevented literal validation crashes on uppercase provider strings in environment variables.
+- **Supervisor Termination:** Fixed premature loop exit caused by `FINAL_ANSWER:` substring matches inside thought text.
+
+### Changed
+- **Version Bump:** `0.19.4` -> `0.19.5`.
+
+---
+
 ## [v0.19.4] - 2026-11-17
 
 ### Pull Request

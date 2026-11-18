@@ -10,7 +10,7 @@ import sys
 import time
 from typing import Any, Optional, Sequence, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 from common_framework.core.llm import (
     BaseLLMClient,
@@ -40,9 +40,12 @@ class SemanticCacheEntry(BaseModel):
     created_at: float = Field(default_factory=time.time)
     last_accessed_at: float = Field(default_factory=time.time)
     ttl: Optional[float] = None
+    _cached_bytes: Optional[int] = PrivateAttr(default=None)
 
     def estimate_bytes(self) -> int:
         """Estimate the exact byte footprint of this cache entry in memory."""
+        if self._cached_bytes is not None:
+            return self._cached_bytes
         query_b = len(self.query.encode("utf-8"))
         emb_b = len(self.embedding) * 4  # 4 bytes per float32 IEEE 754 value
         if isinstance(self.response, str):
@@ -57,7 +60,9 @@ class SemanticCacheEntry(BaseModel):
         else:
             resp_b = sys.getsizeof(self.response)
         meta_b = len(json.dumps(self.metadata).encode("utf-8")) if self.metadata else 0
-        return query_b + emb_b + resp_b + meta_b + 128
+        total = query_b + emb_b + resp_b + meta_b + 128
+        self._cached_bytes = total
+        return total
 
     def is_expired(self, current_time: Optional[float] = None) -> bool:
         """Return True if the entry has an active TTL and has expired."""
@@ -161,19 +166,25 @@ class SemanticCache:
     def _enforce_capacity(self, namespace: str) -> None:
         """Evict least-recently-accessed entry if namespace exceeds max_entries or max_memory_bytes."""
         entries = self._ensure_namespace(namespace)
-        
-        # Enforce max entry count
-        while len(entries) > self.max_entries:
-            entries.sort(key=lambda x: x.last_accessed_at)
-            entries.pop(0)
-            self._evictions += 1
 
-        # Enforce max memory bytes budget
+        # Enforce max entry count efficiently in a single pass
+        if len(entries) > self.max_entries:
+            entries.sort(key=lambda x: x.last_accessed_at)
+            excess = len(entries) - self.max_entries
+            del entries[:excess]
+            self._evictions += excess
+
+        # Enforce max memory bytes budget without repeated re-sorting and re-serialization
         if self.max_memory_bytes is not None and self.max_memory_bytes > 0:
-            while entries and sum(e.estimate_bytes() for e in entries) > self.max_memory_bytes:
+            current_bytes = sum(e.estimate_bytes() for e in entries)
+            if current_bytes > self.max_memory_bytes:
                 entries.sort(key=lambda x: x.last_accessed_at)
-                entries.pop(0)
-                self._evictions += 1
+                evicted_count = 0
+                while entries and current_bytes > self.max_memory_bytes:
+                    popped = entries.pop(0)
+                    current_bytes -= popped.estimate_bytes()
+                    evicted_count += 1
+                self._evictions += evicted_count
 
     async def get(
         self,

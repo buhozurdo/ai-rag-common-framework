@@ -440,14 +440,22 @@ class InMemoryVectorStore(BaseVectorStore):
         """Retrieve a specific document by its ID within a collection."""
         return self._collections.get(collection, {}).get(document_id)
 
-    def clear(self) -> None:
-        """Remove all collections and documents from memory."""
-        self._collections.clear()
-        self._bm25_indexes.clear()
-        self._normalized_vectors.clear()
-        self._matrix_cache.clear()
-        self._filter_indices_cache.clear()
-        self._locks.clear()
+    def clear(self, collection: Optional[str] = None) -> None:
+        """Remove documents from memory. If collection is specified, purge only that collection."""
+        if collection is not None:
+            self._collections.pop(collection, None)
+            self._bm25_indexes.pop(collection, None)
+            self._normalized_vectors.pop(collection, None)
+            self._matrix_cache.pop(collection, None)
+            self._filter_indices_cache.pop(collection, None)
+            self._locks.pop(collection, None)
+        else:
+            self._collections.clear()
+            self._bm25_indexes.clear()
+            self._normalized_vectors.clear()
+            self._matrix_cache.clear()
+            self._filter_indices_cache.clear()
+            self._locks.clear()
 
     def save_to_json(
         self,

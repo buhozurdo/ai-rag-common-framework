@@ -144,6 +144,11 @@ class VectorMemory(ConversationBufferMemory):
         """Clear both short-term conversational buffer and persistent vector memory."""
         await super().clear()
         if hasattr(self.vector_store, "clear"):
-            res = self.vector_store.clear(self.collection)
+            try:
+                res = self.vector_store.clear(self.collection)
+            except TypeError:
+                res = self.vector_store.clear()
             if asyncio.iscoroutine(res):
                 await res
+        elif hasattr(self.vector_store, "delete_collection"):
+            await self.vector_store.delete_collection(self.collection)

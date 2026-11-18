@@ -378,17 +378,22 @@ class SQLiteVectorStore(BaseVectorStore):
 
         if tokens:
             match_expr = " OR ".join(f'"{t}"' for t in tokens)
+            sql_limit = "" if filter_metadata else "LIMIT ?"
+            sql_params: list[Any] = [collection, match_expr]
+            if not filter_metadata:
+                sql_params.append(candidate_count * 2)
+
             try:
                 cursor = self._conn.execute(
-                    """
+                    f"""
                     SELECT f.id, bm25(documents_fts) AS bm25_score, d.content, d.metadata, d.embedding, d.dim
                     FROM documents_fts f
                     JOIN documents d ON f.collection = d.collection AND f.id = d.id
                     WHERE f.collection = ? AND documents_fts MATCH ?
                     ORDER BY bm25_score ASC
-                    LIMIT ?
+                    {sql_limit}
                     """,
-                    (collection, match_expr, candidate_count * 2),
+                    tuple(sql_params),
                 )
                 raw_items: list[tuple[Document, float]] = []
                 for row in cursor.fetchall():
@@ -519,11 +524,15 @@ class SQLiteVectorStore(BaseVectorStore):
         emb = _unpack_vector(blob, dim) if blob else None
         return Document(id=doc_id, content=content, metadata=meta, embedding=emb)
 
-    def clear(self) -> None:
-        """Remove all collections and documents from the SQLite database."""
+    def clear(self, collection: Optional[str] = None) -> None:
+        """Remove documents from the SQLite database. If collection is specified, purge only that collection."""
         with self._conn:
-            self._conn.execute("DELETE FROM documents")
-            self._conn.execute("DELETE FROM documents_fts")
+            if collection is not None:
+                self._conn.execute("DELETE FROM documents WHERE collection = ?", (collection,))
+                self._conn.execute("DELETE FROM documents_fts WHERE collection = ?", (collection,))
+            else:
+                self._conn.execute("DELETE FROM documents")
+                self._conn.execute("DELETE FROM documents_fts")
 
     def close(self) -> None:
         """Close the underlying SQLite connection cleanly."""
