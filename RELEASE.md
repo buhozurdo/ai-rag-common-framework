@@ -45,9 +45,9 @@ We adhere to [Semantic Versioning 2.0.0](https://semver.org/) and PEP 440:
 
 | Git Tag | Release Date | Target Commit | Channel | Release Summary |
 | :--- | :---: | :---: | :---: | :--- |
-| [`v0.19.6`](#v0196-pre-completion-bug-audit-guardrails-agent-self-correction--security-hardening) | 2026-11-18 | `HEAD` | **Patch** | Pre-Completion Bug Audit Guardrails, Agent Self-Correction & Security Hardening |
-| [`v0.19.5`](#v0195-p1-audit-hardening-eviction-optimization--hybrid-search-metadata-fix) | 2026-11-18 | `HEAD` | **Patch** | P1 Audit Hardening, Eviction Optimization & Hybrid Search Metadata Fix |
-| [`v0.19.4`](#v0194-ci-stability-dependency-action-pinned-shas--pdfloader-dependency-ordering) | 2026-11-17 | `HEAD` | **Patch** | CI Stability, Dependency Action Pinned SHAs & PDFLoader Dependency Ordering |
+| [`v0.19.6`](#v0196-pre-completion-bug-audit-guardrails-agent-self-correction--security-hardening) | 2026-11-18 | `837382f` | **Patch** | Pre-Completion Bug Audit Guardrails, Agent Self-Correction & Security Hardening |
+| [`v0.19.5`](#v0195-p1-audit-hardening-eviction-optimization--hybrid-search-metadata-fix) | 2026-11-18 | `3392485` | **Patch** | P1 Audit Hardening, Eviction Optimization & Hybrid Search Metadata Fix |
+| [`v0.19.4`](#v0194-ci-stability-dependency-action-pinned-shas--pdfloader-dependency-ordering) | 2026-11-17 | `f41d13f` | **Patch** | CI Stability, Dependency Action Pinned SHAs & PDFLoader Dependency Ordering |
 | [`v0.19.3`](#v0193-sla-benchmark-performance-optimization--guardrails-fast-path--lock-free-cost-ledger) | 2026-11-17 | `80258c2` | **Patch** | SLA Benchmark Performance Optimization (Guardrails Fast-Path & Lock-Free Cost Ledger) |
 | [`v0.19.2`](#v0192-critical-security-remediation-ci-hardening--enterprise-audit-fixes) | 2026-11-17 | `80258c2` | **Patch** | Critical Security Remediation, CI Hardening & Enterprise Audit Fixes |
 | [`v0.19.1`](#v0191-cicd-pipeline-automation-test-matrix-hardening--pypi-publishing) | 2026-11-16 | `5e0d915` | **Patch** | CI/CD Pipeline Automation, Test Matrix Hardening & PyPI Publishing |
@@ -137,7 +137,7 @@ We adhere to [Semantic Versioning 2.0.0](https://semver.org/) and PEP 440:
 
 ## v0.19.6: Pre-Completion Bug Audit Guardrails, Agent Self-Correction & Security Hardening
 
-> 🏷️ **Git Tag:** `v0.19.6` | 📅 **Release Date:** `2026-11-18` | 📦 **Release Channel:** `GA Patch`  
+> 🏷️ **Git Tag:** `v0.19.6` | 📅 **Release Date:** `2026-11-18` | 🔗 **Target Commit:** `837382f` | 📦 **Release Channel:** `GA Patch`  
 > 🔀 **PR Title:** `release: v0.19.6 - Pre-Completion Bug Audit Guardrail, Agent Self-Correction & Security Hardening`  
 > 📝 **PR Description:** Releases v0.19.6 delivering autonomous pre-completion verification guardrails for defect analysis and bug detection, agent self-correction feedback loops, salted PII HMAC masking, RAG endpoint payload bounding, and agent bus history preservation.
 
@@ -187,7 +187,7 @@ The `v0.19.6` patch release introduces specialized guardrails that search for, a
 
 ## v0.19.5: P1 Audit Hardening, Eviction Optimization & Hybrid Search Metadata Fix
 
-> 🏷️ **Git Tag:** `v0.19.5` | 📅 **Release Date:** `2026-11-18` | 📦 **Release Channel:** `GA Patch`  
+> 🏷️ **Git Tag:** `v0.19.5` | 📅 **Release Date:** `2026-11-18` | 🔗 **Target Commit:** `3392485` | 📦 **Release Channel:** `GA Patch`  
 > 🔀 **PR Title:** `release: v0.19.5 - P1 Audit Hardening, Eviction Optimization & Hybrid Search Metadata Fix`  
 > 📝 **PR Description:** Releases v0.19.5 resolving key P1 audit findings across semantic caching performance, SQLite hybrid search candidate filtering, workflow event loop concurrency, and supervisor decision parsing.
 
@@ -221,7 +221,7 @@ The `v0.19.5` patch release eliminates performance bottlenecks in semantic cache
 
 ## v0.19.4: CI Stability, Dependency Action Pinned SHAs & PDFLoader Dependency Ordering
 
-> 🏷️ **Git Tag:** `v0.19.4` | 📅 **Release Date:** `2026-11-17` | 📦 **Release Channel:** `GA Patch`  
+> 🏷️ **Git Tag:** `v0.19.4` | 📅 **Release Date:** `2026-11-17` | 🔗 **Target Commit:** `f41d13f` | 📦 **Release Channel:** `GA Patch`  
 > 🔀 **PR Title:** `release: v0.19.4 - CI Workflow Hardening & PDFLoader Dependency Precedence Fix`  
 > 📝 **PR Description:** Releases v0.19.4 resolving CI/CD dependency conflicts, bumping GitHub Actions to secure pinned SHAs, and fixing PDFLoader optional dependency precedence in headless environments.
 
