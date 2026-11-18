@@ -378,12 +378,28 @@ class RAGEngine:
         return rag_tool
 
     def _run_sync(self, coro: Any) -> Any:
+        """Execute a coroutine synchronously, avoiding event loop conflicts and cross-loop deadlocks."""
         try:
-            asyncio.get_running_loop()
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(asyncio.run, coro).result()
+            loop = asyncio.get_running_loop()
         except RuntimeError:
-            return asyncio.run(coro)
+            loop = None
+
+        if loop is not None and loop.is_running():
+            def _worker_runner() -> Any:
+                worker_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(worker_loop)
+                try:
+                    return worker_loop.run_until_complete(coro)
+                finally:
+                    try:
+                        worker_loop.run_until_complete(worker_loop.shutdown_asyncgens())
+                    finally:
+                        worker_loop.close()
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                return pool.submit(_worker_runner).result()
+
+        return asyncio.run(coro)
 
     def ingest_documents_sync(
         self,

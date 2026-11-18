@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import tempfile
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -133,18 +135,29 @@ class InMemoryVectorStore(BaseVectorStore):
         self._normalized_vectors: dict[str, dict[str, list[float]]] = {}
         # Matrix cache for BLAS GEMV: collection_name -> (doc_ids_list, np.ndarray)
         self._matrix_cache: dict[str, Optional[tuple[list[str], Any]]] = {}
-        # Filter indices cache: collection_name -> (filter_key -> np.ndarray of indices)
-        self._filter_indices_cache: dict[str, dict[tuple[tuple[str, Any], ...], Any]] = {}
+        # Bounded LRU filter indices cache: collection_name -> OrderedDict(filter_key -> np.ndarray of indices)
+        self._filter_indices_cache: OrderedDict[str, OrderedDict[tuple[tuple[str, Any], ...], Any]] = OrderedDict()
         self.use_numpy = _HAS_NUMPY if use_numpy is None else (use_numpy and _HAS_NUMPY)
         self.base_dir: Optional[Path] = Path(base_dir).resolve() if base_dir is not None else None
-        # Per-collection locks for coroutine/thread safety
-        self._locks: dict[str, asyncio.Lock] = {}
+        # Per-loop, per-collection locks for coroutine/thread safety without cross-loop deadlock
+        self._locks: dict[tuple[int, str], asyncio.Lock] = {}
 
     def _get_collection_lock(self, collection: str) -> asyncio.Lock:
-        """Retrieve or create an asyncio.Lock for isolated collection concurrency."""
-        if collection not in self._locks:
-            self._locks[collection] = asyncio.Lock()
-        return self._locks[collection]
+        """Retrieve or create an asyncio.Lock for isolated collection concurrency.
+        
+        Locks are partitioned by event loop ID and collection name to eliminate cross-loop
+        deadlocks or RuntimeError when accessed across different async loops or threads.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            loop_id = id(loop)
+        except RuntimeError:
+            loop_id = 0
+
+        lock_key = (loop_id, collection)
+        if lock_key not in self._locks:
+            self._locks[lock_key] = asyncio.Lock()
+        return self._locks[lock_key]
 
     def _resolve_safe_path(
         self,
@@ -159,8 +172,8 @@ class InMemoryVectorStore(BaseVectorStore):
         Args:
             filepath: Target file path (relative or absolute).
             base_dir: Optional override for the designated base directory. If None,
-                `self.base_dir` is used. If neither is set, relative paths are validated
-                against `Path.cwd()` to prevent escaping the working directory.
+                `self.base_dir` is used. If neither is set, paths are validated
+                against `Path.cwd()` and system temp directories to prevent unauthorized filesystem access.
 
         Returns:
             Resolved absolute Path.
@@ -185,17 +198,17 @@ class InMemoryVectorStore(BaseVectorStore):
                 )
             return candidate
 
-        # No base_dir designated: protect cwd from relative traversal
-        if not raw_path.is_absolute():
-            candidate = (Path.cwd() / raw_path).resolve()
-            if not candidate.is_relative_to(Path.cwd()):
-                raise ValueError(
-                    f"Path traversal detected: '{filepath}' resolves to '{candidate}', "
-                    f"which is outside current working directory '{Path.cwd()}'"
-                )
-            return candidate
+        # No base_dir designated: protect against arbitrary path traversal by restricting to cwd and system temp dir
+        candidate = (Path.cwd() / raw_path).resolve() if not raw_path.is_absolute() else raw_path.resolve()
+        cwd_resolved = Path.cwd().resolve()
+        temp_resolved = Path(tempfile.gettempdir()).resolve()
 
-        return raw_path.resolve()
+        if not (candidate.is_relative_to(cwd_resolved) or candidate.is_relative_to(temp_resolved)):
+            raise ValueError(
+                f"Path traversal detected: '{filepath}' resolves to '{candidate}', "
+                f"which is outside current working directory '{cwd_resolved}'"
+            )
+        return candidate
 
     def _ensure_collection(self, collection: str) -> tuple[dict[str, Document], BM25Index]:
         if collection not in self._collections:
@@ -278,22 +291,44 @@ class InMemoryVectorStore(BaseVectorStore):
                 def _make_hashable(val: Any) -> Any:
                     if isinstance(val, (list, tuple)):
                         return tuple(_make_hashable(x) for x in val)
+                    if isinstance(val, (set, frozenset)):
+                        return tuple(sorted((repr(type(x)), _make_hashable(x)) for x in val))
                     if isinstance(val, dict):
-                        return tuple(sorted((k, _make_hashable(v)) for k, v in val.items()))
+                        return tuple(sorted((str(k), _make_hashable(v)) for k, v in val.items()))
                     return val
 
+                def _metadata_matches(doc_meta: dict[str, Any], query_meta: dict[str, Any]) -> bool:
+                    for k, v in query_meta.items():
+                        doc_val = doc_meta.get(k)
+                        if doc_val == v:
+                            continue
+                        if _make_hashable(doc_val) == _make_hashable(v):
+                            continue
+                        return False
+                    return True
+
                 filter_key = tuple(sorted((k, _make_hashable(v)) for k, v in filter_metadata.items()))
-                coll_cache = self._filter_indices_cache.setdefault(collection, {})
-                if len(coll_cache) > 512:
-                    coll_cache.clear()
+
+                # Bounded LRU cache containment across collections and filter keys
+                if collection not in self._filter_indices_cache:
+                    if len(self._filter_indices_cache) >= 64:
+                        self._filter_indices_cache.popitem(last=False)
+                    self._filter_indices_cache[collection] = OrderedDict()
+
+                coll_cache = self._filter_indices_cache[collection]
+                self._filter_indices_cache.move_to_end(collection)
+
                 idx_arr = coll_cache.get(filter_key)
-                if idx_arr is None:
+                if idx_arr is not None:
+                    coll_cache.move_to_end(filter_key)
+                else:
                     idx_list = []
                     for idx, d_id in enumerate(doc_ids):
-                        meta = doc_store[d_id].metadata
-                        if all(meta.get(k) == v or _make_hashable(meta.get(k)) == v for k, v in filter_key):
+                        if _metadata_matches(doc_store[d_id].metadata, filter_metadata):
                             idx_list.append(idx)
                     idx_arr = np.array(idx_list, dtype=np.int32)
+                    if len(coll_cache) >= 512:
+                        coll_cache.popitem(last=False)
                     coll_cache[filter_key] = idx_arr
 
                 if len(idx_arr) == 0:
@@ -337,7 +372,21 @@ class InMemoryVectorStore(BaseVectorStore):
         scored_py: list[tuple[float, Document]] = []
         for doc_id, doc in doc_store.items():
             if filter_metadata:
-                matches = all(doc.metadata.get(k) == v for k, v in filter_metadata.items())
+                def _make_hashable_py(val: Any) -> Any:
+                    if isinstance(val, (list, tuple)):
+                        return tuple(_make_hashable_py(x) for x in val)
+                    if isinstance(val, (set, frozenset)):
+                        return tuple(sorted((repr(type(x)), _make_hashable_py(x)) for x in val))
+                    if isinstance(val, dict):
+                        return tuple(sorted((str(k), _make_hashable_py(v)) for k, v in val.items()))
+                    return val
+
+                matches = True
+                for k, v in filter_metadata.items():
+                    doc_val = doc.metadata.get(k)
+                    if doc_val != v and _make_hashable_py(doc_val) != _make_hashable_py(v):
+                        matches = False
+                        break
                 if not matches:
                     continue
 
@@ -425,7 +474,7 @@ class InMemoryVectorStore(BaseVectorStore):
             self._normalized_vectors.pop(collection, None)
             self._matrix_cache.pop(collection, None)
             self._filter_indices_cache.pop(collection, None)
-        self._locks.pop(collection, None)
+        self._locks = {k: v for k, v in self._locks.items() if k[1] != collection}
 
     async def list_collections(self) -> list[str]:
         return list(self._collections.keys())
@@ -448,7 +497,7 @@ class InMemoryVectorStore(BaseVectorStore):
             self._normalized_vectors.pop(collection, None)
             self._matrix_cache.pop(collection, None)
             self._filter_indices_cache.pop(collection, None)
-            self._locks.pop(collection, None)
+            self._locks = {k: v for k, v in self._locks.items() if k[1] != collection}
         else:
             self._collections.clear()
             self._bm25_indexes.clear()

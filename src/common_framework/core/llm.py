@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 from abc import ABC, abstractmethod
@@ -1171,6 +1172,32 @@ class LLMFactory:
     """Factory to instantiate LLM clients based on configuration or provider name."""
 
     @staticmethod
+    def _safe_instantiate(
+        cls: type[BaseLLMClient],
+        **kwargs: Any,
+    ) -> BaseLLMClient:
+        """Instantiate a client class, inspecting its constructor signature to forward supported parameters cleanly."""
+        sig = inspect.signature(cls.__init__)
+        has_varkw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+        if has_varkw:
+            return cls(**kwargs)
+
+        accepted = {
+            name
+            for name, p in sig.parameters.items()
+            if p.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+        }
+        filtered = {k: v for k, v in kwargs.items() if k in accepted}
+        instance = cls(**filtered)
+        for k, v in kwargs.items():
+            if k not in accepted and not hasattr(instance, k):
+                try:
+                    setattr(instance, k, v)
+                except Exception:
+                    pass
+        return instance
+
+    @staticmethod
     def create(
         provider: Optional[str] = None,
         settings: Optional[Settings] = None,
@@ -1192,13 +1219,13 @@ class LLMFactory:
                 )
 
         if target_provider == "gemini":
-            return GeminiClient(settings=cfg, client=client, **kwargs)
+            return LLMFactory._safe_instantiate(GeminiClient, settings=cfg, client=client, **kwargs)
         if target_provider == "openai":
-            return OpenAICompatibleClient(provider_name="openai", settings=cfg, client=client, **kwargs)
+            return LLMFactory._safe_instantiate(OpenAICompatibleClient, provider_name="openai", settings=cfg, client=client, **kwargs)
         if target_provider == "anthropic":
-            return AnthropicClient(settings=cfg, client=client, **kwargs)
+            return LLMFactory._safe_instantiate(AnthropicClient, settings=cfg, client=client, **kwargs)
         if target_provider == "ollama":
-            return OllamaClient(settings=cfg, client=client, **kwargs)
+            return LLMFactory._safe_instantiate(OllamaClient, settings=cfg, client=client, **kwargs)
         if target_provider in ("deepseek", "groq", "vllm"):
             default_urls = {
                 "deepseek": "https://api.deepseek.com",
@@ -1212,15 +1239,17 @@ class LLMFactory:
                     api_key = "vllm"
                 else:
                     api_key = cfg.get_api_key_for_provider(target_provider) or "none"
-            return OpenAICompatibleClient(
+            return LLMFactory._safe_instantiate(
+                OpenAICompatibleClient,
                 provider_name=target_provider,
                 base_url=base_url,
                 api_key=api_key,
                 settings=cfg,
                 client=client,
+                **kwargs,
             )
         if target_provider in ("custom", "generic"):
-            return OpenAICompatibleClient(provider_name="custom", settings=cfg, client=client, **kwargs)
+            return LLMFactory._safe_instantiate(OpenAICompatibleClient, provider_name="custom", settings=cfg, client=client, **kwargs)
 
         raise ConfigurationError(
             f"Unsupported LLM provider: {target_provider!r}. "

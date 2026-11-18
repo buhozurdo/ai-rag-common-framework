@@ -45,6 +45,7 @@ We adhere to [Semantic Versioning 2.0.0](https://semver.org/) and PEP 440:
 
 | Git Tag | Release Date | Target Commit | Channel | Release Summary |
 | :--- | :---: | :---: | :---: | :--- |
+| [`v0.19.7`](#v0197-p1-audit-remediation-bug-22-to-bug-27-lru-filter-bounding-fail-close-hitl--path-security) | 2026-11-18 | `HEAD` | **Patch** | P1 Audit Remediation (BUG-22 to BUG-27), LRU Filter Bounding, Fail-Close HITL & Path Security |
 | [`v0.19.6`](#v0196-pre-completion-bug-audit-guardrails-agent-self-correction--security-hardening) | 2026-11-18 | `837382f` | **Patch** | Pre-Completion Bug Audit Guardrails, Agent Self-Correction & Security Hardening |
 | [`v0.19.5`](#v0195-p1-audit-hardening-eviction-optimization--hybrid-search-metadata-fix) | 2026-11-18 | `3392485` | **Patch** | P1 Audit Hardening, Eviction Optimization & Hybrid Search Metadata Fix |
 | [`v0.19.4`](#v0194-ci-stability-dependency-action-pinned-shas--pdfloader-dependency-ordering) | 2026-11-17 | `f41d13f` | **Patch** | CI Stability, Dependency Action Pinned SHAs & PDFLoader Dependency Ordering |
@@ -134,6 +135,46 @@ We adhere to [Semantic Versioning 2.0.0](https://semver.org/) and PEP 440:
 ---
 
 ## 🚀 Release History & Release Notes
+
+## v0.19.7: P1 Audit Remediation (BUG-22 to BUG-27), LRU Filter Bounding, Fail-Close HITL & Path Security
+
+> 🏷️ **Git Tag:** `v0.19.7` | 📅 **Release Date:** `2026-11-18` | 🔗 **Target Commit:** `HEAD` | 📦 **Release Channel:** `GA Patch`  
+> 🔀 **PR Title:** `release: v0.19.7 - P1 Audit Remediation (BUG-22 to BUG-27), LRU Filter Bounding, Fail-Close HITL & Path Security`  
+> 📝 **PR Description:** Releases v0.19.7 resolving P1 audit bugs BUG-22 through BUG-27 tracked in the local Project Manager: kwargs safety in LLMFactory, bounded LRU filter index containment, nested unhashable metadata filtering, cross-loop deadlock prevention, strict Fail-Close HITL enforcement, and filesystem path traversal hardening.
+
+The `v0.19.7` patch release remediates high-severity defects identified in the technical audit and tracked in the local Project Manager (`BUG-22` to `BUG-27`), hardening LLM initialization, vector storage memory boundedness, complex metadata comparison, asynchronous loop safety, human-in-the-loop authorization, and filesystem boundaries.
+
+---
+
+### 🛡️ Defect Remediation & Security Hardening:
+* **LLMFactory Parameter Introspection (BUG-22 / P1-7):**
+  * Added `LLMFactory._safe_instantiate()` using `inspect.signature` to introspect provider client constructors.
+  * Forwards recognized parameters while safely preserving extra kwargs, preventing `TypeError: unexpected keyword argument` crashes when instantiating clients with custom or extended configuration.
+  * Corrected parameter forwarding for `deepseek`, `groq`, and `vllm` OpenAI-compatible clients.
+* **Bounded LRU Cache in InMemoryVectorStore (BUG-23 / P1-10):**
+  * Replaced unbounded dictionary mapping in `_filter_indices_cache` with dual-level `OrderedDict` LRU eviction.
+  * Capped collection-level cache to 64 collections and per-collection filter index cache to 512 entries, evicting the oldest entries via `popitem(last=False)` to eliminate unbounded memory growth during high-cardinality metadata queries.
+* **Nested & Unhashable Metadata Filtering (BUG-24 / P1-11):**
+  * Implemented recursive `_make_hashable()` handling nested `dict`, `list`, `tuple`, `set`, and `frozenset` objects.
+  * Implemented deep `_metadata_matches()` for both NumPy matrix filtering and pure-Python search fallback, eliminating `TypeError: unhashable type: 'dict'` crashes when searching documents with semi-structured JSON metadata.
+* **Cross-Loop Thread Isolation & Deadlock Prevention (BUG-25 / P1-14):**
+  * Partitioned `InMemoryVectorStore._locks` by `(loop_id, collection)` so coroutines across distinct worker loops or threads do not share loop-bound `asyncio.Lock` instances.
+  * Hardened `RAGEngine._run_sync()`: when invoked from a thread with an active running loop, coroutines execute in a dedicated worker thread with an isolated event loop and proper asynchronous generator shutdown, preventing cross-loop deadlocks.
+* **Strict Fail-Close Human-in-the-Loop Pipeline (BUG-26 / P1-16):**
+  * Hardened `ReActAgent` review loop to guarantee *fail-close* security: any exception raised by `self.approval_hook.review()`, malformed or null review responses, non-dictionary `modified_arguments`, or unrecognized decision values strictly block tool execution and report an actionable error.
+* **Filesystem Path Traversal Hardening (BUG-27 / P1-25):**
+  * Hardened `InMemoryVectorStore._resolve_safe_path()`: when `base_dir=None`, absolute paths are validated against `Path.cwd()` and system temporary directories.
+  * Attempts to read or save vector stores to arbitrary host paths (such as `/etc/passwd` or `C:\Windows\System32\...`) are immediately blocked with `ValueError`.
+
+---
+
+### 🧪 Test Suite Metrics:
+* **382 tests passing (100% pass rate, 0 failed, 0 skipped)** in 9.90s.
+* Added dedicated test suite `tests/test_p1_sprint2_fixes.py` (9 tests covering BUG-22 through BUG-27).
+* Static defect audit: `ai-rag audit src` reports 0 blocking issues.
+* Local Project Manager: Tasks `BUG-22`, `BUG-23`, `BUG-24`, `BUG-25`, `BUG-26`, and `BUG-27` marked as `done`.
+
+---
 
 ## v0.19.6: Pre-Completion Bug Audit Guardrails, Agent Self-Correction & Security Hardening
 

@@ -283,22 +283,36 @@ class ReActAgent:
                             "but no approval_hook is configured on the agent."
                         )
                     else:
-                        review = await self.approval_hook.review(
-                            ApprovalRequest(
-                                tool_name=action,
-                                arguments=action_args,
-                                context=context,
+                        try:
+                            review = await self.approval_hook.review(
+                                ApprovalRequest(
+                                    tool_name=action,
+                                    arguments=action_args,
+                                    context=context,
+                                )
                             )
-                        )
-                        if review.decision == ApprovalDecision.REJECTED:
+                        except Exception as exc:
+                            observation = f"Execution blocked: Approval hook failed with error: {exc}"
+                            review = None
+
+                        if observation:
+                            pass
+                        elif review is None or not hasattr(review, "decision"):
+                            observation = f"Execution blocked: Approval hook returned invalid review {review!r}"
+                        elif review.decision == ApprovalDecision.REJECTED:
                             observation = f"Execution blocked: {review.reason or 'Rejected by human operator.'}"
                         elif review.decision == ApprovalDecision.MODIFIED:
-                            action_args = review.modified_arguments if review.modified_arguments is not None else action_args
-                            try:
-                                result = await self.registry.execute(action, approved=True, **action_args)
-                                observation = str(result)
-                            except Exception as exc:
-                                observation = f"Error executing tool '{action}': {exc}"
+                            if isinstance(review.modified_arguments, dict):
+                                action_args = review.modified_arguments
+                            elif review.modified_arguments is not None:
+                                observation = f"Execution blocked: Modified arguments must be a dictionary, got {type(review.modified_arguments).__name__}"
+                                action_args = None
+                            if action_args is not None:
+                                try:
+                                    result = await self.registry.execute(action, approved=True, **action_args)
+                                    observation = str(result)
+                                except Exception as exc:
+                                    observation = f"Error executing tool '{action}': {exc}"
                         elif review.decision == ApprovalDecision.APPROVED:
                             try:
                                 result = await self.registry.execute(action, approved=True, **action_args)
@@ -306,7 +320,7 @@ class ReActAgent:
                             except Exception as exc:
                                 observation = f"Error executing tool '{action}': {exc}"
                         else:
-                            observation = f"Execution blocked: Unrecognized approval decision '{review.decision}'"
+                            observation = f"Execution blocked: Unrecognized approval decision {review.decision!r}"
                 else:
                     try:
                         result = await self.registry.execute(action, **action_args)

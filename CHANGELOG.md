@@ -4,6 +4,39 @@ All notable changes to this project are documented in this file following [Keep 
 
 ---
 
+## [v0.19.7] - 2026-11-18
+
+### Pull Request
+- **PR Title:** `release: v0.19.7 - P1 Audit Remediation (BUG-22 to BUG-27), LRU Filter Bounding, Fail-Close HITL & Path Security`
+- **PR Description:**
+  > ### Summary
+  > Releases `v0.19.7` resolving P1 audit bugs BUG-22 through BUG-27 tracked in the local Project Manager: kwargs safety in `LLMFactory`, bounded LRU filter index containment, nested unhashable metadata filtering, cross-loop deadlock prevention, strict Fail-Close HITL enforcement, and filesystem path traversal hardening.
+  >
+  > ### Key Changes
+  > - **LLMFactory kwargs Safety (BUG-22 / P1-7):** Added `_safe_instantiate` with `inspect.signature` introspection to forward recognized constructor parameters to provider clients without raising `TypeError: unexpected keyword argument`, while preserving extended configuration.
+  > - **Bounded LRU Filter Cache (BUG-23 / P1-10):** Replaced unbounded collection cache in `InMemoryVectorStore` with `OrderedDict` LRU eviction (bounded to 64 collections, 512 filter queries per collection) to eliminate long-term memory leaks.
+  > - **Nested & Unhashable Metadata Filtering (BUG-24 / P1-11):** Implemented recursive `_make_hashable` and deep `_metadata_matches` supporting nested dicts, lists, tuples, and sets in vector metadata filtering without `TypeError: unhashable type`.
+  > - **Cross-Loop Thread Isolation (BUG-25 / P1-14):** Partitioned `InMemoryVectorStore` locks by `(loop_id, collection)` and hardened `RAGEngine._run_sync` with dedicated worker loops and async generator shutdown to prevent event loop binding conflicts and deadlocks.
+  > - **Strict Fail-Close HITL (BUG-26 / P1-16):** Hardened `ReActAgent` human-in-the-loop review pipeline: exceptions in approval hooks, malformed review payloads, and invalid modified arguments strictly block tool execution (*fail-close*).
+  > - **Path Traversal Hardening (BUG-27 / P1-25):** Closed absolute path traversal vulnerability in `_resolve_safe_path` when `base_dir=None`, restricting file saving and loading to working directory and temporary directories.
+  >
+  > ### Verification
+  > - `pytest tests/`: 382 passed in 9.90s (100% pass rate, 0 failed, 0 skipped).
+  > - Added dedicated test suite `tests/test_p1_sprint2_fixes.py`.
+  > - Pre-completion static defect audit: `ai-rag audit src` reports 0 blocking issues.
+  > - Local Project Manager: Updated `BUG-22` through `BUG-27` to `done`.
+
+### Fixed
+- **LLMFactory:** Prevented `TypeError` on unexpected kwargs during client instantiation.
+- **InMemoryVectorStore:** Prevented unbounded memory leak with LRU filter caching; supported nested unhashable metadata; blocked absolute path traversal when `base_dir=None`.
+- **RAGEngine & Locks:** Prevented cross-loop deadlocks in sync methods and partitioned collection locks.
+- **ReActAgent:** Enforced strict fail-close behavior on any approval hook error or unhandled decision.
+
+### Changed
+- **Version Bump:** `0.19.6` -> `0.19.7`.
+
+---
+
 ## [v0.19.6] - 2026-11-18
 
 ### Pull Request
