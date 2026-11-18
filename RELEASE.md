@@ -45,8 +45,8 @@ We adhere to [Semantic Versioning 2.0.0](https://semver.org/) and PEP 440:
 
 | Git Tag | Release Date | Target Commit | Channel | Release Summary |
 | :--- | :---: | :---: | :---: | :--- |
-| [`v0.19.3`](#v0193-sla-benchmark-performance-optimization--guardrails-fast-path--lock-free-cost-ledger) | 2026-11-17 | `HEAD` | **Patch** | SLA Benchmark Performance Optimization (Guardrails Fast-Path & Lock-Free Cost Ledger) |
-| [`v0.19.2`](#v0192-critical-security-remediation-ci-hardening--enterprise-audit-fixes) | 2026-11-17 | `4f8e1bc` | **Patch** | Critical Security Remediation, CI Hardening & Enterprise Audit Fixes |
+| [`v0.19.3`](#v0193-sla-benchmark-performance-optimization--guardrails-fast-path--lock-free-cost-ledger) | 2026-11-17 | `80258c2` | **Patch** | SLA Benchmark Performance Optimization (Guardrails Fast-Path & Lock-Free Cost Ledger) |
+| [`v0.19.2`](#v0192-critical-security-remediation-ci-hardening--enterprise-audit-fixes) | 2026-11-17 | `80258c2` | **Patch** | Critical Security Remediation, CI Hardening & Enterprise Audit Fixes |
 | [`v0.19.1`](#v0191-cicd-pipeline-automation-test-matrix-hardening--pypi-publishing) | 2026-11-16 | `5e0d915` | **Patch** | CI/CD Pipeline Automation, Test Matrix Hardening & PyPI Publishing |
 | [`v0.19.0`](#v0190-production-hardening-p0-bug-fixes--api-contract-freeze) | 2026-11-15 | `f1f5c7b` | **GA** | Production Hardening, P0 Bug Fixes & API Contract Freeze |
 | [`v0.19.0-beta`](#v0190-beta-api-freeze--test-suite-stabilization) | 2026-11-15 | `f1f5c7b` | **Beta** | API Freeze & Test Suite Stabilization |
@@ -134,7 +134,7 @@ We adhere to [Semantic Versioning 2.0.0](https://semver.org/) and PEP 440:
 
 ## v0.19.3: SLA Benchmark Performance Optimization — Guardrails Fast-Path & Lock-Free Cost Ledger
 
-> 🏷️ **Git Tag:** `v0.19.3` | 📅 **Release Date:** `2026-11-17` | 🔗 **Target Commit:** `HEAD` | 📦 **Release Channel:** `GA Patch`  
+> 🏷️ **Git Tag:** `v0.19.3` | 📅 **Release Date:** `2026-11-17` | 🔗 **Target Commit:** `80258c2` | 📦 **Release Channel:** `GA Patch`  
 > 🔀 **PR Title:** `release: v0.19.3 - SLA Benchmark Performance Optimization (Guardrails Fast-Path & Lock-Free Cost Ledger)`  
 > 📝 **PR Description:** Releases v0.19.3 delivering high-throughput performance optimizations and SLA window compliance for batch guardrail evaluation and concurrent token cost accounting.
 
@@ -164,7 +164,7 @@ The `v0.19.3` patch release optimizes throughput under intensive load scenarios,
 
 ## v0.19.2: Critical Security Remediation, CI Hardening & Enterprise Audit Fixes
 
-> 🏷️ **Git Tag:** `v0.19.2` | 📅 **Release Date:** `2026-11-17` | 🔗 **Target Commit:** `HEAD` | 📦 **Release Channel:** `GA Patch`  
+> 🏷️ **Git Tag:** `v0.19.2` | 📅 **Release Date:** `2026-11-17` | 🔗 **Target Commit:** `80258c2` | 📦 **Release Channel:** `GA Patch`  
 > 🔀 **PR Title:** `release: v0.19.2 - Critical Security Remediation, CI Hardening & Enterprise Audit Fixes`  
 > 📝 **PR Description:** Releases v0.19.2 delivering comprehensive remediation of critical P0 and P1 security defects, runtime authorization hardening, test suite expansions, and CI/CD release pipeline consolidation following the multi-agent enterprise audit.
 
