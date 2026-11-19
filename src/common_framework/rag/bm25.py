@@ -28,6 +28,7 @@ class BM25Index:
         self._doc_lengths: dict[str, int] = {}
         self._doc_frequencies: Counter[str] = Counter()
         self._term_frequencies: dict[str, Counter[str]] = {}
+        self._postings: dict[str, set[str]] = {}
         self._avg_doc_len: float = 0.0
 
     def add_documents(self, documents: list[Document]) -> None:
@@ -44,6 +45,10 @@ class BM25Index:
                     self._doc_frequencies[term] -= 1
                     if self._doc_frequencies[term] <= 0:
                         del self._doc_frequencies[term]
+                    if term in self._postings:
+                        self._postings[term].discard(doc.id)
+                        if not self._postings[term]:
+                            del self._postings[term]
                 self._doc_lengths.pop(doc.id, None)
 
             tokens = tokenize(doc.content)
@@ -53,9 +58,12 @@ class BM25Index:
             tf = Counter(tokens)
             self._term_frequencies[doc.id] = tf
 
-            # Update document frequency for unique terms in this doc
+            # Update document frequency and postings for unique terms in this doc
             for term in set(tokens):
                 self._doc_frequencies[term] += 1
+                if term not in self._postings:
+                    self._postings[term] = set()
+                self._postings[term].add(doc.id)
 
         total_length = sum(self._doc_lengths.values())
         self._avg_doc_len = total_length / len(self._doc_lengths) if self._doc_lengths else 0.0
@@ -71,6 +79,10 @@ class BM25Index:
                     self._doc_frequencies[term] -= 1
                     if self._doc_frequencies[term] <= 0:
                         del self._doc_frequencies[term]
+                    if term in self._postings:
+                        self._postings[term].discard(doc_id)
+                        if not self._postings[term]:
+                            del self._postings[term]
 
         total_length = sum(self._doc_lengths.values())
         self._avg_doc_len = total_length / len(self._doc_lengths) if self._doc_lengths else 0.0
@@ -92,19 +104,28 @@ class BM25Index:
         num_docs = len(self._documents)
         scores: dict[str, float] = {}
 
+        # Pre-filter candidate documents once outside the term evaluation loop
+        candidate_ids: Optional[set[str]] = None
+        if filter_metadata:
+            candidate_ids = {
+                doc_id
+                for doc_id, doc in self._documents.items()
+                if all(doc.metadata.get(k) == v for k, v in filter_metadata.items())
+            }
+            if not candidate_ids:
+                return []
+
         for term in query_tokens:
-            df = self._doc_frequencies.get(term, 0)
-            if df == 0:
+            posting = self._postings.get(term)
+            if not posting:
                 continue
 
+            df = len(posting)
             # Standard IDF with smoothing to prevent negative weights
             idf = math.log((num_docs - df + 0.5) / (df + 0.5) + 1.0)
 
-            for doc_id, doc in self._documents.items():
-                if filter_metadata:
-                    if not all(doc.metadata.get(k) == v for k, v in filter_metadata.items()):
-                        continue
-
+            target_ids = (posting & candidate_ids) if candidate_ids is not None else posting
+            for doc_id in target_ids:
                 tf = self._term_frequencies[doc_id].get(term, 0)
                 if tf == 0:
                     continue

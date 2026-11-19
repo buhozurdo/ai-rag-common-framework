@@ -138,3 +138,38 @@ async def test_sync_tool_non_blocking_thread_execution():
     assert t2 != main_tid
     assert elapsed < 0.09
 
+
+def test_tool_registry_schema_caching():
+    """Verify that to_openai_schemas caches the result and invalidates on registry mutation."""
+    registry = ToolRegistry()
+
+    @tool
+    def tool_a(x: int) -> int:
+        return x
+
+    @tool
+    def tool_b(y: str) -> str:
+        return y
+
+    registry.register(tool_a)
+    schemas1 = registry.to_openai_schemas()
+    assert len(schemas1) == 1
+    assert schemas1[0]["function"]["name"] == "tool_a"
+
+    # Repeated call returns identical cached schema content without re-serializing
+    schemas2 = registry.to_openai_schemas()
+    assert schemas2 == schemas1
+
+    # Registering a new tool invalidates the cache
+    registry.register(tool_b)
+    schemas3 = registry.to_openai_schemas()
+    assert len(schemas3) == 2
+    names = {s["function"]["name"] for s in schemas3}
+    assert names == {"tool_a", "tool_b"}
+
+    # Unregistering invalidates the cache
+    registry.unregister("tool_a")
+    schemas4 = registry.to_openai_schemas()
+    assert len(schemas4) == 1
+    assert schemas4[0]["function"]["name"] == "tool_b"
+

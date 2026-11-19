@@ -9,7 +9,7 @@ import re
 import sqlite3
 import struct
 import time
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any, Optional, Union
 
 from common_framework.rag.bm25 import reciprocal_rank_fusion
@@ -40,6 +40,14 @@ def _resolve_safe_path(
     path traversal (e.g. `../` or external absolute paths).
     """
     raw_path = Path(filepath)
+    str_path = str(filepath)
+
+    # Block external cross-platform absolute paths (e.g. Windows drive/UNC paths on POSIX systems)
+    if (PureWindowsPath(str_path).is_absolute() or bool(PureWindowsPath(str_path).drive)) and not raw_path.is_absolute():
+        raise ValueError(
+            f"Path traversal detected: '{filepath}' is an external absolute path"
+        )
+
     designated = base_dir
 
     if designated is not None:

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import heapq
 import json
 import math
 import tempfile
 from abc import ABC, abstractmethod
 from collections import OrderedDict
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any, Optional, Union
 
 from common_framework.rag.bm25 import BM25Index, reciprocal_rank_fusion
@@ -24,6 +25,29 @@ try:
 except ImportError:  # pragma: no cover
     np = None  # type: ignore
     _HAS_NUMPY = False
+
+
+def _make_hashable(val: Any) -> Any:
+    """Recursively convert nested mutable structures to deterministic hashable tuples."""
+    if isinstance(val, (list, tuple)):
+        return tuple(_make_hashable(x) for x in val)
+    if isinstance(val, (set, frozenset)):
+        return tuple(sorted((repr(type(x)), _make_hashable(x)) for x in val))
+    if isinstance(val, dict):
+        return tuple(sorted((str(k), _make_hashable(v)) for k, v in val.items()))
+    return val
+
+
+def _metadata_matches(doc_meta: dict[str, Any], query_meta: dict[str, Any]) -> bool:
+    """Check whether candidate document metadata satisfies all filter criteria."""
+    for k, v in query_meta.items():
+        doc_val = doc_meta.get(k)
+        if doc_val == v:
+            continue
+        if _make_hashable(doc_val) == _make_hashable(v):
+            continue
+        return False
+    return True
 
 
 def normalize_vector(v: list[float]) -> tuple[list[float], float]:
@@ -182,6 +206,14 @@ class InMemoryVectorStore(BaseVectorStore):
             ValueError: If the resolved path lies outside the designated base directory.
         """
         raw_path = Path(filepath)
+        str_path = str(filepath)
+
+        # Block external cross-platform absolute paths (e.g. Windows drive/UNC paths on POSIX systems)
+        if (PureWindowsPath(str_path).is_absolute() or bool(PureWindowsPath(str_path).drive)) and not raw_path.is_absolute():
+            raise ValueError(
+                f"Path traversal detected: '{filepath}' is an external absolute path"
+            )
+
         designated = base_dir if base_dir is not None else self.base_dir
 
         if designated is not None:
@@ -288,25 +320,6 @@ class InMemoryVectorStore(BaseVectorStore):
             raw_scores = matrix.dot(q_arr)  # Single BLAS GEMV call
 
             if filter_metadata:
-                def _make_hashable(val: Any) -> Any:
-                    if isinstance(val, (list, tuple)):
-                        return tuple(_make_hashable(x) for x in val)
-                    if isinstance(val, (set, frozenset)):
-                        return tuple(sorted((repr(type(x)), _make_hashable(x)) for x in val))
-                    if isinstance(val, dict):
-                        return tuple(sorted((str(k), _make_hashable(v)) for k, v in val.items()))
-                    return val
-
-                def _metadata_matches(doc_meta: dict[str, Any], query_meta: dict[str, Any]) -> bool:
-                    for k, v in query_meta.items():
-                        doc_val = doc_meta.get(k)
-                        if doc_val == v:
-                            continue
-                        if _make_hashable(doc_val) == _make_hashable(v):
-                            continue
-                        return False
-                    return True
-
                 filter_key = tuple(sorted((k, _make_hashable(v)) for k, v in filter_metadata.items()))
 
                 # Bounded LRU cache containment across collections and filter keys
@@ -371,24 +384,8 @@ class InMemoryVectorStore(BaseVectorStore):
 
         scored_py: list[tuple[float, Document]] = []
         for doc_id, doc in doc_store.items():
-            if filter_metadata:
-                def _make_hashable_py(val: Any) -> Any:
-                    if isinstance(val, (list, tuple)):
-                        return tuple(_make_hashable_py(x) for x in val)
-                    if isinstance(val, (set, frozenset)):
-                        return tuple(sorted((repr(type(x)), _make_hashable_py(x)) for x in val))
-                    if isinstance(val, dict):
-                        return tuple(sorted((str(k), _make_hashable_py(v)) for k, v in val.items()))
-                    return val
-
-                matches = True
-                for k, v in filter_metadata.items():
-                    doc_val = doc.metadata.get(k)
-                    if doc_val != v and _make_hashable_py(doc_val) != _make_hashable_py(v):
-                        matches = False
-                        break
-                if not matches:
-                    continue
+            if filter_metadata and not _metadata_matches(doc.metadata, filter_metadata):
+                continue
 
             unit_doc = norm_store.get(doc_id)
             if unit_doc is not None:
@@ -396,8 +393,12 @@ class InMemoryVectorStore(BaseVectorStore):
                 sim = (max(-1.0, min(1.0, dot)) + 1.0) / 2.0
                 scored_py.append((sim, doc))
 
-        scored_py.sort(key=lambda x: x[0], reverse=True)
-        return [SearchResult(document=doc, score=score) for score, doc in scored_py[:top_k]]
+        if len(scored_py) <= top_k:
+            scored_py.sort(key=lambda x: x[0], reverse=True)
+            top_results = scored_py
+        else:
+            top_results = heapq.nlargest(top_k, scored_py, key=lambda x: x[0])
+        return [SearchResult(document=doc, score=score) for score, doc in top_results]
 
     async def similarity_search(
         self,

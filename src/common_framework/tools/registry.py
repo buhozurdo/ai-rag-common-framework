@@ -20,15 +20,18 @@ class ToolRegistry:
 
     def __init__(self) -> None:
         self._tools: dict[str, Tool] = {}
+        self._cached_openai_schemas: Optional[list[dict[str, Any]]] = None
 
     def register(self, target: Tool | Callable[..., Any]) -> Tool:
         """Register a Tool instance or a raw function into the registry."""
         tool_instance = target if isinstance(target, Tool) else tool(target)
         self._tools[tool_instance.name] = tool_instance
+        self._cached_openai_schemas = None
         return tool_instance
 
     def unregister(self, name: str) -> Optional[Tool]:
         """Remove a tool from the registry."""
+        self._cached_openai_schemas = None
         return self._tools.pop(name, None)
 
     def get(self, name: str) -> Tool:
@@ -43,7 +46,9 @@ class ToolRegistry:
 
     def to_openai_schemas(self) -> list[dict[str, Any]]:
         """Return all registered tools as an array of OpenAI function definitions."""
-        return [t.to_openai_schema() for t in self._tools.values()]
+        if self._cached_openai_schemas is None:
+            self._cached_openai_schemas = [t.to_openai_schema() for t in self._tools.values()]
+        return list(self._cached_openai_schemas)
 
     async def execute(self, tool_name: str, *, approved: bool = False, **kwargs: Any) -> Any:
         """Execute a registered tool by name with provided arguments."""
