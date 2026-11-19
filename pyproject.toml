@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling < 1.32.0"]
 build-backend = "hatchling.build"
 
 [project]
 name = "ai-rag-common-framework"
-version = "0.19.7"
+version = "0.19.8"
 description = "A lightweight, modular, zero-bloat foundation framework for RAG, MCP servers, and modern AI workflows."
 readme = "README.md"
 requires-python = ">=3.11"

@@ -4,6 +4,34 @@ All notable changes to this project are documented in this file following [Keep 
 
 ---
 
+## [v0.19.8] - 2026-11-19
+
+### Pull Request
+- **PR Title:** `release: v0.19.8 - Cross-Platform Path Traversal Remediation for Linux, Build Metadata & Search Performance Optimizations`
+- **PR Description:**
+  > ### Summary
+  > Releases `v0.19.8` resolving Linux CI test failures on path traversal validation, modernizing package metadata packaging compatibility (Hatchling / Twine), and delivering high-throughput search optimizations for hybrid BM25 and vector stores.
+  >
+  > ### Key Changes
+  > - **Cross-Platform Path Traversal Remediation:** Hardened `_resolve_safe_path` in `InMemoryVectorStore` and `SQLiteVectorStore` using `PureWindowsPath` to detect and block Windows external absolute and drive paths on POSIX/Linux systems where `Path.is_absolute()` evaluates to `False`.
+  > - **Build Metadata Compatibility:** Pinned `hatchling < 1.32.0` in `pyproject.toml` and upgraded `twine==7.0.0` in `.github/workflows/release.yml` to prevent `Invalid distribution metadata: '2.5'` errors during wheel verification.
+  > - **BM25 Search Inverted Postings:** Added `_postings` inverted term index and candidate ID pre-filtering in `BM25Index.search()`, eliminating full collection scans on filtered queries (such as omnichannel catalog store availability).
+  > - **VectorStore Closure & Top-K Optimization:** Replaced inner closure allocations with module-level metadata evaluators and utilized `heapq.nlargest` for top-k selection in pure-Python fallback cosine search.
+  > - **OpenAI Schema Caching:** Added cached schema generation in `ToolRegistry.to_openai_schemas()` with automatic invalidation upon tool registration or removal.
+  >
+  > ### Verification
+  > - `pytest tests/`: 385 passed in 8.70s (100% pass rate, 0 failed, 0 skipped).
+  > - Added tests for high-dim search, omnichannel hybrid pre-filtering, and tool schema caching.
+
+### Fixed
+- **VectorStore & SQLite Storage:** Correctly detected external Windows paths on Linux runners, preventing path traversal bypass when `base_dir=None`.
+- **Release CI Workflow:** Upgraded Twine to 7.0.0 and pinned Hatchling to 1.31.0 for valid wheel metadata verification.
+
+### Changed
+- **Version Bump:** `0.19.7` -> `0.19.8`.
+
+---
+
 ## [v0.19.7] - 2026-11-18
 
 ### Pull Request
