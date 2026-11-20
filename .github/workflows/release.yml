@@ -39,12 +39,12 @@ jobs:
         run: |
           twine check --strict dist/*
 
-      - name: Generate SHA-256 checksums
-        run: |
-          cd dist && sha256sum * > checksums.sha256
-
       - name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1
+
+      - name: Generate SHA-256 checksums
+        run: |
+          cd dist && sha256sum *.whl *.tar.gz > checksums.sha256
 
       - name: Attach artifacts to GitHub Release
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v2.2.1
