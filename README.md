@@ -4,14 +4,14 @@
 
 [![PyPI](https://img.shields.io/pypi/v/ai-rag-common-framework.svg)](https://pypi.org/project/ai-rag-common-framework/)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/Version-v0.19.1%20(Stable)-brightgreen.svg)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/Tests-331%20passed%20(100%25)-success.svg)](tests/)
+[![Version](https://img.shields.io/badge/Version-v0.19.8%20(Stable)-brightgreen.svg)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/Tests-385%20passed%20(100%25)-success.svg)](tests/)
 [![Coverage](https://img.shields.io/badge/Coverage-91%25-brightgreen.svg)](tests/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
 
-## 🚀 Overview & Current Status: `v0.19.1` (Production CI/CD & API Freeze)
+## 🚀 Overview & Current Status: `v0.19.8` (Cross-Platform Hardening & High-Throughput Search)
 
 **AI RAG Common Framework** is engineered as a clean, idiomatic, and dependency-light standard library for modern AI engineering. It replaces sprawling, over-engineered stacks with composable, typed primitives that work seamlessly across asynchronous coroutines and synchronous pipelines.
 
