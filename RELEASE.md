@@ -45,6 +45,7 @@ We adhere to [Semantic Versioning 2.0.0](https://semver.org/) and PEP 440:
 
 | Git Tag | Release Date | Target Commit | Channel | Release Summary |
 | :--- | :---: | :---: | :---: | :--- |
+| [`v0.19.9`](#v0199-rag-security--dos-protection-concurrency-hardening-and-extended-test-coverage) | 2026-11-22 | `58251e4` | **Patch** | RAG Security & DoS Protection, Concurrency Hardening, and Extended Test Coverage |
 | [`v0.19.8`](#v0198-cross-platform-path-traversal-remediation-for-linux-build-metadata--search-performance-optimizations) | 2026-11-19 | `83491a3` | **Patch** | Cross-Platform Path Traversal Remediation for Linux, Build Metadata & Search Performance Optimizations |
 | [`v0.19.7`](#v0197-p1-audit-remediation-bug-22-to-bug-27-lru-filter-bounding-fail-close-hitl--path-security) | 2026-11-18 | `v0.19.7` | **Patch** | P1 Audit Remediation (BUG-22 to BUG-27), LRU Filter Bounding, Fail-Close HITL & Path Security |
 | [`v0.19.6`](#v0196-pre-completion-bug-audit-guardrails-agent-self-correction--security-hardening) | 2026-11-18 | `837382f` | **Patch** | Pre-Completion Bug Audit Guardrails, Agent Self-Correction & Security Hardening |
@@ -136,6 +137,41 @@ We adhere to [Semantic Versioning 2.0.0](https://semver.org/) and PEP 440:
 ---
 
 ## 🚀 Release History & Release Notes
+
+## v0.19.9: RAG Security & DoS Protection, Concurrency Hardening, and Extended Test Coverage
+
+> 🏷️ **Git Tag:** `v0.19.9` | 📅 **Release Date:** `2026-11-22` | 📦 **Release Channel:** `GA Patch`  
+> 🔀 **PR Title:** `release: v0.19.9 - RAG Security & DoS Protection, Concurrency Hardening, and Extended Test Coverage`  
+> 📝 **PR Description:** Releases v0.19.9 resolving high-severity P1 audit findings including RAG route authentication and anti-DoS payload protection, SemanticCache concurrency validation, FallbackLLM streaming cascade testing, AnthropicClient HTTP error mapping, ReActAgent edge cases, and cross-platform SSRF test vectors.
+
+The `v0.19.9` patch release brings comprehensive hardening across API security, streaming fallback resilience, concurrent cache throughput, and agent execution boundaries.
+
+---
+
+### 🛡️ Defect Remediation & Security Hardening:
+* **RAG Route Security & Anti-DoS Payload Bounding (P1-24):**
+  * Implemented first-class API key authentication (`rag_api_key`) in `create_app` and `create_rag_router`, supporting `Authorization: Bearer` and `X-API-Key` headers evaluated via constant-time comparison (`hmac.compare_digest`).
+  * Endured `RAGIngestRequest` with non-empty string checks, a maximum 100,000 characters per text chunk, a 10,000,000 character total payload limit, and strict parity between `texts` and `metadatas` list lengths.
+  * Bounded collection names in delete endpoints to prevent unbounded string allocations.
+* **SQLiteVectorStore Context Manager Assertions (P1-30):**
+  * Upgraded `test_sqlite_vectorstore_context_manager` to assert actual operational status within the context block and verified that connection closure occurs upon exit (`sqlite3.ProgrammingError: Cannot operate on a closed database`).
+* **SemanticCache Concurrency Verification (P1-31):**
+  * Added `test_semantic_cache_concurrency_parallel_access` validating thread safety and namespace isolation across 50 concurrent tasks with `asyncio.gather`.
+* **AnthropicClient HTTP Error Mapping & Streaming (P1-32):**
+  * Added full error mapping tests for HTTP 401 (`AuthenticationError`), 404 (`ModelNotFoundError`), 429 with retry-after header (`RateLimitError`), 500 (`LLMProviderError`), and SSE mid-stream error events.
+* **FallbackLLMClient Streaming Cascade (P1-33):**
+  * Tested streaming failover before chunk emission, verified non-rewinding termination on mid-stream failure, and verified `AllProvidersFailedError` when all cascade providers fail.
+* **SSRF Protection Test Vectors (P1-35):**
+  * Covered IPv6 cloud metadata (`[fd00:ec2::254]`), IPv4-mapped metadata (`[::ffff:169.254.169.254]`), IPv6 link-local (`[fe80::1]`), and restricted loopback configurations.
+* **ReActAgent Reasoning Boundaries (P1-36):**
+  * Validated maximum iterations exhaustion (`success=False`, `iterations == max_iterations`) and graceful recovery when encountering unregistered tools (`ToolNotFoundError`).
+
+---
+
+### 🧪 Verification & Test Suite:
+* **396 unit tests passing (100% pass rate)** with **91% global coverage**, including 11 newly authored unit and integration tests across security, concurrency, streaming, and agent reasoning.
+
+---
 
 ## v0.19.8: Cross-Platform Path Traversal Remediation for Linux, Build Metadata & Search Performance Optimizations
 
