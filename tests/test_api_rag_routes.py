@@ -192,3 +192,67 @@ async def test_custom_rag_router_prefix_and_auth(test_rag_engine):
             "/api/v1/knowledge/collections", headers={"x-api-key": "secret-token"}
         )
         assert good_auth.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_create_app_with_rag_api_key_authentication(test_rag_engine):
+    """Verify built-in rag_api_key security rejects unauthorized requests and allows valid Bearer or X-API-Key."""
+    app = create_app(
+        enable_rag_routes=True,
+        rag_api_key="super-secret-rag-key",
+        rag_engine=test_rag_engine,
+    )
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. No auth -> 401
+        res_no_auth = await client.get("/rag/collections")
+        assert res_no_auth.status_code == status.HTTP_401_UNAUTHORIZED
+        assert res_no_auth.headers.get("www-authenticate") == "Bearer"
+
+        # 2. Invalid auth -> 401
+        res_bad_auth = await client.get(
+            "/rag/collections", headers={"Authorization": "Bearer wrong-key"}
+        )
+        assert res_bad_auth.status_code == status.HTTP_401_UNAUTHORIZED
+
+        # 3. Valid Bearer auth -> 200
+        res_bearer = await client.get(
+            "/rag/collections", headers={"Authorization": "Bearer super-secret-rag-key"}
+        )
+        assert res_bearer.status_code == status.HTTP_200_OK
+
+        # 4. Valid X-API-Key auth -> 200
+        res_x_api = await client.get(
+            "/rag/collections", headers={"X-API-Key": "super-secret-rag-key"}
+        )
+        assert res_x_api.status_code == status.HTTP_200_OK
+
+
+@pytest.mark.asyncio
+async def test_rag_ingest_payload_validation_and_bounds(test_rag_engine):
+    """Verify RAG ingest rejects empty chunks, mismatched metadata lists, and oversized strings."""
+    app = create_app(enable_rag_routes=True, rag_engine=test_rag_engine)
+    transport = httpx.ASGITransport(app=app)
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        # Empty string chunk
+        res_empty = await client.post(
+            "/rag/ingest",
+            json={"texts": ["   ", "valid chunk"]},
+        )
+        assert res_empty.status_code == 422
+
+        # Mismatched metadata length
+        res_mismatch = await client.post(
+            "/rag/ingest",
+            json={"texts": ["chunk 1", "chunk 2"], "metadatas": [{"cat": "1"}]},
+        )
+        assert res_mismatch.status_code == 422
+
+        # Chunk exceeding 100,000 characters
+        res_huge = await client.post(
+            "/rag/ingest",
+            json={"texts": ["a" * 100_001]},
+        )
+        assert res_huge.status_code == 422

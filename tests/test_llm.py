@@ -9,11 +9,13 @@ from common_framework.core.config import Settings
 from common_framework.core.exceptions import (
     AuthenticationError,
     ConfigurationError,
+    LLMProviderError,
     ModelNotFoundError,
     RateLimitError,
     StructuredOutputError,
 )
 from common_framework.core.llm import (
+    AnthropicClient,
     ChatMessage,
     GeminiClient,
     LLMFactory,
@@ -164,6 +166,75 @@ async def test_rate_limit_error_handling():
         assert exc_info.value.status_code == 429
         assert exc_info.value.retry_after == 5.0
         assert call_count == 2  # 1 initial + 1 retry
+
+
+@pytest.mark.asyncio
+async def test_anthropic_http_error_handling():
+    """Verify AnthropicClient maps 401 to AuthenticationError, 404 to ModelNotFoundError, 429 to RateLimitError, and 500 to LLMProviderError."""
+    # 1. 401 AuthenticationError
+    def auth_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"error": {"type": "authentication_error", "message": "Invalid API key"}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(auth_handler)) as http_client:
+        client = AnthropicClient(api_key="bad-key", client=http_client)
+        with pytest.raises(AuthenticationError) as exc:
+            await client.complete([ChatMessage(role=Role.USER, content="Hi")])
+        assert exc.value.status_code == 401
+        assert "Invalid API key" in str(exc.value)
+
+    # 2. 404 ModelNotFoundError
+    def not_found_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"error": {"type": "not_found_error", "message": "model claude-unknown not found"}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(not_found_handler)) as http_client:
+        client = AnthropicClient(api_key="sk-ant", client=http_client)
+        with pytest.raises(ModelNotFoundError) as exc:
+            await client.complete([ChatMessage(role=Role.USER, content="Hi")])
+        assert exc.value.status_code == 404
+        assert "not found" in str(exc.value)
+
+    # 3. 429 RateLimitError with retry-after
+    def rate_limit_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, headers={"retry-after": "12.5"}, json={"error": {"type": "rate_limit_error", "message": "Rate limit exceeded"}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(rate_limit_handler)) as http_client:
+        client = AnthropicClient(api_key="sk-ant", client=http_client, settings=Settings(DEFAULT_MAX_RETRIES=0))
+        with pytest.raises(RateLimitError) as exc:
+            await client.complete([ChatMessage(role=Role.USER, content="Hi")])
+        assert exc.value.status_code == 429
+        assert exc.value.retry_after == 12.5
+
+    # 4. 500 LLMProviderError
+    def server_err_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"error": {"type": "api_error", "message": "Internal server error"}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(server_err_handler)) as http_client:
+        client = AnthropicClient(api_key="sk-ant", client=http_client, settings=Settings(DEFAULT_MAX_RETRIES=0))
+        with pytest.raises(LLMProviderError) as exc:
+            await client.complete([ChatMessage(role=Role.USER, content="Hi")])
+        assert exc.value.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_anthropic_streaming_midstream_error():
+    """Verify AnthropicClient complete_stream detects event: error mid-stream and raises LLMProviderError."""
+    sse_body = (
+        'event: message_start\ndata: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","usage":{"input_tokens":5}}}\n\n'
+        'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n'
+        'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Generating..."}}\n\n'
+        'event: error\ndata: {"type":"error","error":{"type":"overloaded_error","message":"Anthropic engine is overloaded"}}\n\n'
+    )
+
+    def sse_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, text=sse_body)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(sse_handler)) as http_client:
+        client = AnthropicClient(api_key="sk-ant", client=http_client)
+        chunks = []
+        with pytest.raises(LLMProviderError, match="Anthropic streaming mid-stream error.*overloaded"):
+            async for chunk in client.complete_stream([ChatMessage(role=Role.USER, content="Stream test")]):
+                chunks.append(chunk.delta)
+        assert "".join(chunks) == "Generating..."
 
 
 @pytest.mark.asyncio

@@ -304,3 +304,46 @@ def test_react_agent_sync_execution():
     resp = agent.run_sync("What is the meaning of life?")
     assert resp.success is True
     assert "42" in resp.output
+
+
+@pytest.mark.asyncio
+async def test_react_agent_max_iterations_exceeded():
+    """Verify ReActAgent sets success=False and returns summary when max_iterations is reached."""
+    # Scripted LLM keeps suggesting actions without concluding
+    scripted_steps = [
+        'Thought: Loop step 1.\nAction: calculator\nAction Input: {"expression": "1 + 1"}',
+        'Thought: Loop step 2.\nAction: calculator\nAction Input: {"expression": "2 + 2"}',
+        'Thought: Loop step 3.\nAction: calculator\nAction Input: {"expression": "4 + 4"}',
+    ]
+    llm = ScriptedMockLLMClient(scripted_steps)
+    registry = ToolRegistry()
+    registry.register(calculator_tool)
+
+    agent = ReActAgent(llm_client=llm, tools=registry, max_iterations=2)
+    response = await agent.run("Calculate forever")
+
+    assert response.success is False
+    assert response.iterations == 2
+    assert len(response.steps) == 2
+    assert "reached max iteration limit (2)" in response.output
+
+
+@pytest.mark.asyncio
+async def test_react_agent_missing_tool_recovery():
+    """Verify ReActAgent catches missing tools, passes observation back to LLM, and recovers."""
+    scripted_steps = [
+        'Thought: I will search using web_search.\nAction: web_search\nAction Input: {"q": "news"}',
+        "Thought: web_search is not available, so I will inform the user.\nFinal Answer: Search tool unavailable.",
+    ]
+    llm = ScriptedMockLLMClient(scripted_steps)
+    registry = ToolRegistry()
+    registry.register(calculator_tool)  # Only calculator registered, web_search missing
+
+    agent = ReActAgent(llm_client=llm, tools=registry, max_iterations=3)
+    response = await agent.run("Search the latest news")
+
+    assert response.success is True
+    assert len(response.steps) == 1
+    assert response.steps[0].action == "web_search"
+    assert "Tool 'web_search' is not found" in response.steps[0].observation
+    assert "Search tool unavailable" in response.output

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 from typing import Any, AsyncIterator, Literal, Optional, Sequence
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Path as FastAPIPath, Request, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from common_framework.rag.engine import RAGEngine
 
@@ -62,8 +63,30 @@ class RAGIngestRequest(BaseModel):
     texts: list[str] = Field(..., min_length=1, max_length=1_000, description="List of text chunks to embed and store")
     collection: str = Field(default="default", max_length=128, description="Target collection/namespace name")
     metadatas: Optional[list[dict[str, Any]]] = Field(
-        default=None, description="Optional list of metadata dicts corresponding to texts"
+        default=None, max_length=1_000, description="Optional list of metadata dicts corresponding to texts"
     )
+
+    @field_validator("texts")
+    @classmethod
+    def validate_texts(cls, v: list[str]) -> list[str]:
+        total_chars = 0
+        for idx, text in enumerate(v):
+            if not text or not text.strip():
+                raise ValueError(f"Text chunk at index {idx} cannot be empty.")
+            if len(text) > 100_000:
+                raise ValueError(f"Text chunk at index {idx} exceeds maximum allowed length of 100,000 characters.")
+            total_chars += len(text)
+        if total_chars > 10_000_000:
+            raise ValueError("Total payload text exceeds maximum allowed size of 10,000,000 characters.")
+        return v
+
+    @model_validator(mode="after")
+    def validate_metadatas_length(self) -> RAGIngestRequest:
+        if self.metadatas is not None and len(self.metadatas) != len(self.texts):
+            raise ValueError(
+                f"Length of metadatas ({len(self.metadatas)}) must match length of texts ({len(self.texts)})."
+            )
+        return self
 
 
 class RAGSearchResultItem(BaseModel):
@@ -125,14 +148,40 @@ def create_rag_router(
     prefix: str = "/rag",
     tags: Optional[Sequence[str]] = None,
     dependencies: Optional[Sequence[Any]] = None,
+    api_key: Optional[str] = None,
 ) -> APIRouter:
     """Build and return a FastAPI APIRouter configured with standard RAG endpoints.
 
     If an `engine` is passed, it is used directly. Otherwise, the router dynamically checks
     `request.app.state.rag_engine`, or lazily creates a default RAGEngine.
+    If `api_key` is provided, requests must supply a matching Bearer or X-API-Key token.
     """
     router_tags = list(tags) if tags is not None else ["RAG"]
-    router = APIRouter(prefix=prefix, tags=router_tags, dependencies=dependencies)
+    deps = list(dependencies) if dependencies is not None else []
+
+    if api_key:
+        async def verify_rag_api_key(
+            authorization: Optional[str] = Header(None, alias="Authorization"),
+            x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+        ) -> None:
+            token = None
+            if authorization:
+                parts = authorization.split(" ", 1)
+                if len(parts) == 2 and parts[0].lower() == "bearer":
+                    token = parts[1].strip()
+            elif x_api_key:
+                token = x_api_key.strip()
+
+            if not token or not hmac.compare_digest(token, api_key):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or missing RAG API key",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+        deps.append(Depends(verify_rag_api_key))
+
+    router = APIRouter(prefix=prefix, tags=router_tags, dependencies=deps)
 
     def _resolve_engine(request: Request) -> RAGEngine:
         if engine is not None:
@@ -288,7 +337,10 @@ def create_rag_router(
         summary="Delete a collection",
         description="Remove a collection and all its indexed documents from the vector store.",
     )
-    async def delete_collection(name: str, request: Request) -> RAGCollectionDeleteResponse:
+    async def delete_collection(
+        name: str = FastAPIPath(..., min_length=1, max_length=128),
+        request: Request = None,
+    ) -> RAGCollectionDeleteResponse:
         rag = _resolve_engine(request)
         if hasattr(rag.vector_store, "delete_collection"):
             await rag.vector_store.delete_collection(name)

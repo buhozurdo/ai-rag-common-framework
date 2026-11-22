@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any
 import pytest
@@ -304,3 +305,36 @@ async def test_rag_engine_with_semantic_cache() -> None:
     assert mock_llm.call_count == 1
     assert mock_llm.stream_call_count == 0
     assert "".join(stream_chunks) == res1.answer
+
+
+@pytest.mark.asyncio
+async def test_semantic_cache_concurrency_parallel_access() -> None:
+    """Verify SemanticCache thread-safety and lock behavior under heavy concurrent read/write load."""
+    cache = SemanticCache(max_entries=100)
+
+    async def worker(worker_id: int):
+        ns = f"ns_{worker_id}"
+        vec = [float(worker_id + 1), 0.5, 0.25]
+        # Write
+        await cache.set(
+            query=f"query from {worker_id}",
+            embedding=vec,
+            response=f"response_{worker_id}",
+            namespace=ns,
+        )
+        # Read back
+        hit = await cache.get(
+            query=f"query from {worker_id}",
+            embedding=vec,
+            namespace=ns,
+        )
+        assert hit is not None
+        assert hit.response == f"response_{worker_id}"
+
+    # Execute 50 concurrent tasks
+    tasks = [worker(i) for i in range(50)]
+    await asyncio.gather(*tasks)
+
+    stats = cache.stats()
+    assert stats.total_entries == 50
+    assert stats.hits == 50
