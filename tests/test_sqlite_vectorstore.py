@@ -321,7 +321,16 @@ async def test_sqlite_vectorstore_rag_engine_integration():
         store.close()
 
 
-def test_sqlite_vectorstore_context_manager():
-    """Verify context manager cleanup."""
+@pytest.mark.asyncio
+async def test_sqlite_vectorstore_context_manager():
+    """Verify context manager enables operations and closes connection on exit."""
+    import sqlite3
+
     with SQLiteVectorStore(db_path=":memory:") as store:
-        assert store.count is not None
+        assert await store.count("default") == 0
+        await store.add_documents([Document(id="cm_1", content="ctx doc", embedding=[0.1, 0.2])])
+        assert await store.count("default") == 1
+
+    # After exit, underlying SQLite connection must be closed
+    with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
+        store._conn.execute("SELECT 1")

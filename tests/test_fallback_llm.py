@@ -33,6 +33,7 @@ from common_framework.core.llm import (
     BaseLLMClient,
     ChatMessage,
     ChatResponse,
+    ChatStreamChunk,
     FallbackCandidate,
     FallbackLLMClient,
     LLMFactory,
@@ -83,6 +84,16 @@ class MockSuccessClient(BaseLLMClient):
         self.call_count += 1
         return response_model(summary=f"Structured from {self.provider_name}", confidence=0.95)
 
+    async def complete_stream(
+        self,
+        messages: list[ChatMessage],
+        model: str | None = None,
+        temperature: float | None = None,
+        **kwargs: Any,
+    ):
+        self.call_count += 1
+        yield ChatStreamChunk(delta=f"Chunk from {self.provider_name}", model=model or self.model_name)
+
 
 class MockFailingClient(BaseLLMClient):
     """Test client that raises a specified error."""
@@ -112,6 +123,38 @@ class MockFailingClient(BaseLLMClient):
         **kwargs: Any,
     ) -> Any:
         self.call_count += 1
+        raise self.error_to_raise
+
+    async def complete_stream(
+        self,
+        messages: list[ChatMessage],
+        model: str | None = None,
+        temperature: float | None = None,
+        **kwargs: Any,
+    ):
+        self.call_count += 1
+        raise self.error_to_raise
+        yield  # Make it an async generator
+
+
+class MockMidStreamFailingClient(BaseLLMClient):
+    """Test client that yields partial chunks and then raises mid-stream."""
+
+    def __init__(self, error_to_raise: Exception, name: str = "mock-midstream-fail") -> None:
+        super().__init__()
+        self.error_to_raise = error_to_raise
+        self.provider_name = name
+        self.call_count = 0
+
+    async def complete(self, messages, **kwargs):
+        raise self.error_to_raise
+
+    async def structured_complete(self, messages, response_model, **kwargs):
+        raise self.error_to_raise
+
+    async def complete_stream(self, messages, **kwargs):
+        self.call_count += 1
+        yield ChatStreamChunk(delta="Initial chunk", model="midstream-model")
         raise self.error_to_raise
 
 
@@ -282,6 +325,51 @@ class TestFallbackLLMClient:
 
         res = await fallback_client.complete(messages=[ChatMessage(role=Role.USER, content="Hi")])
         assert res.model == "gpt-4o"
+
+    @pytest.mark.asyncio
+    async def test_complete_stream_fallback_before_emission(self):
+        """When candidate 1 fails before yielding chunks, stream seamlessly fails over to candidate 2."""
+        c1 = MockFailingClient(RateLimitError("Quota limit", provider="primary"), name="primary")
+        c2 = MockSuccessClient(name="secondary", model_name="gpt-4o")
+
+        fallback_client = FallbackLLMClient(clients=[c1, c2])
+        chunks = []
+        async for chunk in fallback_client.complete_stream([ChatMessage(role=Role.USER, content="Stream")]):
+            chunks.append(chunk.delta)
+
+        assert chunks == ["Chunk from secondary"]
+        assert c1.call_count == 1
+        assert c2.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_complete_stream_midstream_failure_does_not_failover(self):
+        """When candidate 1 fails mid-stream after emitting chunks, it raises immediately without failover."""
+        c1 = MockMidStreamFailingClient(LLMProviderError("Connection reset mid-stream", provider="primary"), name="primary")
+        c2 = MockSuccessClient(name="secondary")
+
+        fallback_client = FallbackLLMClient(clients=[c1, c2])
+        received = []
+        with pytest.raises(LLMProviderError, match="Connection reset mid-stream"):
+            async for chunk in fallback_client.complete_stream([ChatMessage(role=Role.USER, content="Stream")]):
+                received.append(chunk.delta)
+
+        assert received == ["Initial chunk"]
+        assert c1.call_count == 1
+        assert c2.call_count == 0  # Secondary must NOT be called after chunks started
+
+    @pytest.mark.asyncio
+    async def test_complete_stream_all_candidates_fail(self):
+        """When all candidates fail before emitting chunks, AllProvidersFailedError is raised."""
+        c1 = MockFailingClient(RateLimitError("429", provider="p1"), name="p1")
+        c2 = MockFailingClient(LLMProviderError("500", provider="p2"), name="p2")
+
+        fallback_client = FallbackLLMClient(clients=[c1, c2])
+        with pytest.raises(AllProvidersFailedError, match="All 2 LLM candidates.*failed streaming"):
+            async for _ in fallback_client.complete_stream([ChatMessage(role=Role.USER, content="Stream")]):
+                pass
+
+        assert c1.call_count == 1
+        assert c2.call_count == 1
 
 
 # ===========================================================================

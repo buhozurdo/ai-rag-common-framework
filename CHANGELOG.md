@@ -4,6 +4,40 @@ All notable changes to this project are documented in this file following [Keep 
 
 ---
 
+## [v0.19.9] - 2026-11-22
+
+### Pull Request
+- **PR Title:** `release: v0.19.9 - RAG Security & DoS Protection, Concurrency Hardening, and Extended Test Coverage`
+- **PR Description:**
+  > ### Summary
+  > Releases `v0.19.9` resolving high-severity P1 audit findings including RAG route authentication and anti-DoS payload protection, SemanticCache concurrency validation, FallbackLLM streaming cascade testing, AnthropicClient HTTP error mapping, ReActAgent edge cases, and cross-platform SSRF test vectors.
+  >
+  > ### Key Changes
+  > - **RAG Security & Anti-DoS Payload Protection (P1-24):** Endured `RAGIngestRequest` with string chunk validation, per-chunk character limits (100k chars), payload total size boundaries (10M chars), and metadata length consistency checks. Added first-class API key authentication (`rag_api_key`) in `create_app` and `create_rag_router` supporting Bearer and X-API-Key tokens with constant-time verification.
+  > - **SQLiteVectorStore Context Manager Assertions (P1-30):** Replaced tautological test assertions with verification of in-context operations and connection closure upon context exit.
+  > - **SemanticCache Concurrency Validation (P1-31):** Added concurrent stress tests across 50 parallel coroutines to ensure thread-safety, namespace isolation, and lock contention resilience.
+  > - **AnthropicClient HTTP Error Mapping & Streaming (P1-32):** Tested complete error mapping for 401 (AuthenticationError), 404 (ModelNotFoundError), 429 with retry-after header (RateLimitError), 500 (LLMProviderError), and mid-stream SSE error events.
+  > - **FallbackLLMClient Streaming Cascade (P1-33):** Validated cascade failover before chunk emission, non-rewinding termination on mid-stream failure, and AllProvidersFailedError handling.
+  > - **SSRF Extended Vectors (P1-35):** Added test coverage for IPv6 cloud metadata (`[fd00:ec2::254]`), IPv4-mapped IPv6, link-local, and loopback enforcement.
+  > - **ReActAgent Reasoning Resilience (P1-36):** Tested maximum iteration exhaustion (`success=False`) and unregistered tool recovery (`ToolNotFoundError`).
+  >
+  > ### Verification
+  > - `pytest tests/`: 396 passed in 9.38s (100% pass rate, 0 failed, 0 skipped).
+
+### Added
+- **RAG Route Security:** Support for `api_key` in `create_rag_router` and `rag_api_key` in `create_app`.
+- **Payload Boundaries:** Strict length and consistency validators on `RAGIngestRequest`.
+- **Test Coverage:** 11 new tests across security, concurrency, fallback streaming, and agent reasoning.
+
+### Fixed
+- **Tautological Test:** Fixed SQLiteVectorStore context manager test to assert actual operational status and connection closure.
+- **RAG Collection Delete:** Bounded collection name path parameter to prevent unconstrained path strings.
+
+### Changed
+- **Version Bump:** `0.19.8` -> `0.19.9`.
+
+---
+
 ## [v0.19.8] - 2026-11-19
 
 ### Pull Request

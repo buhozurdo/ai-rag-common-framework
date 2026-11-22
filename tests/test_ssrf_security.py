@@ -96,3 +96,26 @@ def test_ssrf_loopback_and_private_controls():
 
     with pytest.raises(ValueError, match="restricted private network"):
         validate_provider_base_url("http://192.168.1.1:8000", block_private=True)
+
+
+def test_ssrf_ipv6_and_ipv4_mapped_vectors():
+    """Verify SSRF protection handles IPv6 metadata, IPv4-mapped IPv6, and link-local IPv6."""
+    # AWS IMDS IPv6 target
+    with pytest.raises(ValueError, match="SSRF protection.*restricted cloud metadata"):
+        validate_provider_base_url("http://[fd00:ec2::254]/latest")
+
+    # IPv4-mapped IPv6 pointing to metadata 169.254.169.254
+    with pytest.raises(ValueError, match="SSRF protection.*restricted (cloud metadata|link-local)"):
+        validate_provider_base_url("http://[::ffff:169.254.169.254]/v1")
+
+    # IPv6 link-local fe80::
+    with pytest.raises(ValueError, match="SSRF protection.*restricted link-local"):
+        validate_provider_base_url("http://[fe80::1]:8080/v1")
+
+    # IPv6 loopback ::1 blocked when allow_local=False
+    with pytest.raises(ValueError, match="restricted loopback"):
+        validate_provider_base_url("http://[::1]:8000", allow_local=False)
+
+    # IPv4-mapped IPv6 loopback blocked when allow_local=False
+    with pytest.raises(ValueError, match="restricted loopback"):
+        validate_provider_base_url("http://[::ffff:127.0.0.1]:8000", allow_local=False)

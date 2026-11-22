@@ -159,6 +159,9 @@ def create_app(
     enable_metrics: Optional[bool] = None,
     rag_engine: Optional[Any] = None,
     enable_rag_routes: bool = False,
+    rag_prefix: str = "/rag",
+    rag_api_key: Optional[str] = None,
+    rag_dependencies: Optional[Sequence[Any]] = None,
     mcp_server: Optional[Any] = None,
     mcp_prefix: str = "/mcp",
     mcp_api_key: Optional[str] = None,
@@ -235,7 +238,14 @@ def create_app(
     if enable_rag_routes:
         from common_framework.api.routes.rag import create_rag_router
 
-        app.include_router(create_rag_router(engine=rag_engine))
+        app.include_router(
+            create_rag_router(
+                engine=rag_engine,
+                prefix=rag_prefix,
+                api_key=rag_api_key,
+                dependencies=rag_dependencies,
+            )
+        )
 
     # Mount optional MCP server over SSE
     if mcp_server is not None:
