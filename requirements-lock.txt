@@ -1,5 +1,5 @@
 # Direct dependencies locked for CI/CD test execution
-fastapi==0.115.8
+fastapi==0.165.0
 httpx==0.28.1
 mcp==2.3.0
 numpy==2.3.2
