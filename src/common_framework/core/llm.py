@@ -6,6 +6,8 @@ import asyncio
 import inspect
 import json
 import logging
+import random
+import re
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Any, AsyncIterator, Generic, Literal, Optional, Sequence, TypeVar, Union
@@ -87,6 +89,37 @@ class ChatStreamChunk(BaseModel):
     model: Optional[str] = None
     finish_reason: Optional[str] = None
     usage: Optional[TokenUsage] = None
+
+
+def _extract_json_payload(raw: str) -> str:
+    """Extract a JSON payload string from LLM output, stripping preambles and markdown fences."""
+    text = raw.strip()
+    if (text.startswith("{") and text.endswith("}")) or (text.startswith("[") and text.endswith("]")):
+        return text
+
+    # Check for markdown code fences (```json ... ``` or ``` ... ```)
+    fence_pattern = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.IGNORECASE)
+    match = fence_pattern.search(text)
+    if match:
+        extracted = match.group(1).strip()
+        if (extracted.startswith("{") and extracted.endswith("}")) or (extracted.startswith("[") and extracted.endswith("]")):
+            return extracted
+        return extracted
+
+    # Find outermost curly braces or square brackets
+    start_brace = text.find("{")
+    start_bracket = text.find("[")
+
+    if start_brace != -1 and (start_bracket == -1 or start_brace < start_bracket):
+        end_brace = text.rfind("}")
+        if end_brace > start_brace:
+            return text[start_brace : end_brace + 1].strip()
+    elif start_bracket != -1:
+        end_bracket = text.rfind("]")
+        if end_bracket > start_bracket:
+            return text[start_bracket : end_bracket + 1].strip()
+
+    return text
 
 
 class BaseLLMClient(ABC):
@@ -319,7 +352,13 @@ class OpenAICompatibleClient(BaseLLMClient):
                     return res
                 except httpx.HTTPStatusError as exc:
                     if exc.response.status_code in (429, 500, 502, 503, 504) and attempt < max_retries:
-                        backoff = 0.2 * (2 ** attempt)
+                        backoff = 0.2 * (2 ** attempt) + random.uniform(0.01, 0.1)
+                        retry_header = exc.response.headers.get("retry-after")
+                        if retry_header:
+                            try:
+                                backoff = max(float(retry_header), backoff)
+                            except ValueError:
+                                pass
                         logger.warning(
                             "Transient HTTP %s from %s. Retrying in %.2fs (attempt %d/%d)...",
                             exc.response.status_code,
@@ -333,7 +372,7 @@ class OpenAICompatibleClient(BaseLLMClient):
                     self._handle_http_error(exc)
                 except httpx.RequestError as exc:
                     if attempt < max_retries:
-                        backoff = 0.2 * (2 ** attempt)
+                        backoff = 0.2 * (2 ** attempt) + random.uniform(0.01, 0.1)
                         logger.warning(
                             "Network connection error with %s: %s. Retrying in %.2fs (attempt %d/%d)...",
                             self.provider_name,
@@ -377,15 +416,7 @@ class OpenAICompatibleClient(BaseLLMClient):
             **kwargs,
         )
 
-        content = response.content.strip()
-        # Clean potential markdown wrapping if returned
-        if content.startswith("```json"):
-            content = content[7:]
-        elif content.startswith("```"):
-            content = content[3:]
-        if content.endswith("```"):
-            content = content[:-3]
-        content = content.strip()
+        content = _extract_json_payload(response.content)
 
         try:
             return response_model.model_validate_json(content)
@@ -729,7 +760,13 @@ class AnthropicClient(BaseLLMClient):
                         exc.response.status_code in (429, 500, 502, 503, 504, 529)
                         and attempt < max_retries
                     ):
-                        backoff = 0.2 * (2**attempt)
+                        backoff = 0.2 * (2**attempt) + random.uniform(0.01, 0.1)
+                        retry_header = exc.response.headers.get("retry-after")
+                        if retry_header:
+                            try:
+                                backoff = max(float(retry_header), backoff)
+                            except ValueError:
+                                pass
                         logger.warning(
                             "Transient HTTP %s from Anthropic. Retrying in %.2fs (attempt %d/%d)...",
                             exc.response.status_code,
@@ -742,7 +779,7 @@ class AnthropicClient(BaseLLMClient):
                     self._handle_http_error(exc)
                 except httpx.RequestError as exc:
                     if attempt < max_retries:
-                        backoff = 0.2 * (2**attempt)
+                        backoff = 0.2 * (2**attempt) + random.uniform(0.01, 0.1)
                         logger.warning(
                             "Network connection error with Anthropic: %s. Retrying in %.2fs (attempt %d/%d)...",
                             exc,
@@ -784,14 +821,7 @@ class AnthropicClient(BaseLLMClient):
             **kwargs,
         )
 
-        content = response.content.strip()
-        if content.startswith("```json"):
-            content = content[7:]
-        elif content.startswith("```"):
-            content = content[3:]
-        if content.endswith("```"):
-            content = content[:-3]
-        content = content.strip()
+        content = _extract_json_payload(response.content)
 
         try:
             return response_model.model_validate_json(content)

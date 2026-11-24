@@ -193,6 +193,11 @@ def create_app(
     methods = list(cors_methods) if cors_methods is not None else ["*"]
     headers = list(cors_headers) if cors_headers is not None else ["*"]
 
+    if active_settings.framework_env == "production" and (cors_origins is None or "*" in origins):
+        logger.warning(
+            "CORS wildcard origin enabled in production environment; specify explicit cors_origins for secure deployments."
+        )
+
     # Per the CORS spec, Access-Control-Allow-Credentials cannot be combined with
     # Access-Control-Allow-Origin: * — doing so enables cross-origin credential theft.
     # Credentials are only enabled when explicit (non-wildcard) origins are provided.

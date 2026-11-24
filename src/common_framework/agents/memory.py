@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
@@ -38,15 +39,18 @@ class ConversationBufferMemory(BaseMemory):
         self.max_messages = max_messages
         self._messages: list[ChatMessage] = []
         self._lock = asyncio.Lock()
+        self._thread_lock = threading.RLock()
 
     async def add_message(self, message: ChatMessage) -> None:
         async with self._lock:
-            self._messages.append(message)
-            self._trim()
+            with self._thread_lock:
+                self._messages.append(message)
+                self._trim()
 
     def add_message_sync(self, message: ChatMessage) -> None:
-        self._messages.append(message)
-        self._trim()
+        with self._thread_lock:
+            self._messages.append(message)
+            self._trim()
 
     def add_user_message(self, content: str) -> None:
         self.add_message_sync(ChatMessage(role=Role.USER, content=content))
@@ -76,10 +80,22 @@ class ConversationBufferMemory(BaseMemory):
 
     async def get_messages(self) -> list[ChatMessage]:
         async with self._lock:
+            with self._thread_lock:
+                return list(self._messages)
+
+    def get_messages_sync(self) -> list[ChatMessage]:
+        """Synchronous thread-safe retrieval of stored conversation messages."""
+        with self._thread_lock:
             return list(self._messages)
 
     async def clear(self) -> None:
         async with self._lock:
+            with self._thread_lock:
+                self._messages.clear()
+
+    def clear_sync(self) -> None:
+        """Synchronously clear memory buffer under thread lock."""
+        with self._thread_lock:
             self._messages.clear()
 
 

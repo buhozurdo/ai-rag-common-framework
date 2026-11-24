@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import math
 import re
 from abc import ABC, abstractmethod
@@ -29,14 +30,37 @@ class BaseReranker(ABC):
         """Score candidate documents jointly against query and return ranked SearchResult list."""
         pass
 
+    def _run_sync(self, coro: Any) -> Any:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop is not None and loop.is_running():
+            def _worker_runner() -> Any:
+                worker_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(worker_loop)
+                try:
+                    return worker_loop.run_until_complete(coro)
+                finally:
+                    try:
+                        worker_loop.run_until_complete(worker_loop.shutdown_asyncgens())
+                    finally:
+                        worker_loop.close()
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                return executor.submit(_worker_runner).result()
+
+        return asyncio.run(coro)
+
     def rerank_sync(
         self,
         query: str,
         documents: list[Document],
         top_k: Optional[int] = None,
     ) -> list[SearchResult]:
-        """Synchronous wrapper for rerank."""
-        return asyncio.run(self.rerank(query, documents, top_k=top_k))
+        """Synchronous wrapper for rerank, safe to call within or outside a running event loop."""
+        return self._run_sync(self.rerank(query, documents, top_k=top_k))
 
     async def aclose(self) -> None:
         """Release underlying HTTP client or compute resources."""

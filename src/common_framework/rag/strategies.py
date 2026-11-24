@@ -235,14 +235,17 @@ class MultiQueryStrategy(BaseRetrievalStrategy):
         ]
         all_results = await asyncio.gather(*tasks, return_exceptions=False)
 
-        # Fuse ranked lists
+        # If engine has a reranker, retrieve a wider candidate pool from RRF before reranking
+        if engine.reranker is not None:
+            candidate_pool_size = max(top_k * 4, 20)
+            fused = multi_list_rrf(all_results, k=self.rrf_k, top_k=candidate_pool_size)
+            if fused:
+                docs = [r.document for r in fused]
+                return await engine.reranker.rerank(query=query, documents=docs, top_k=top_k)
+            return []
+
+        # No reranker: fuse directly to requested top_k
         fused = multi_list_rrf(all_results, k=self.rrf_k, top_k=top_k)
-
-        # If engine has a reranker, apply cross-encoder reranking over the candidate set
-        if engine.reranker is not None and fused:
-            docs = [r.document for r in fused]
-            return await engine.reranker.rerank(query=query, documents=docs, top_k=top_k)
-
         return fused[:top_k]
 
 
