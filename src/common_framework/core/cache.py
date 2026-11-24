@@ -131,6 +131,8 @@ class SemanticCache:
 
         # Partitioned store: namespace -> list of SemanticCacheEntry
         self._entries: dict[str, list[SemanticCacheEntry]] = {}
+        # O(1) exact query lookup fast-path: namespace -> {normalized_query -> entry}
+        self._exact_index: dict[str, dict[str, SemanticCacheEntry]] = {}
         self._hits: int = 0
         self._misses: int = 0
         self._evictions: int = 0
@@ -150,6 +152,10 @@ class SemanticCache:
         """Remove expired entries in the specified namespace."""
         if namespace in self._entries:
             self._entries[namespace][:] = [e for e in self._entries[namespace] if not e.is_expired(now)]
+        if namespace in self._exact_index:
+            self._exact_index[namespace] = {
+                k: e for k, e in self._exact_index[namespace].items() if not e.is_expired(now)
+            }
 
     def total_bytes(self, namespace: Optional[str] = None) -> int:
         """Return the total estimated memory footprint in bytes for cached entries."""
@@ -186,6 +192,12 @@ class SemanticCache:
                     evicted_count += 1
                 self._evictions += evicted_count
 
+        if namespace in self._exact_index:
+            alive_ids = {id(e) for e in entries}
+            self._exact_index[namespace] = {
+                k: e for k, e in self._exact_index[namespace].items() if id(e) in alive_ids
+            }
+
     async def get(
         self,
         query: str,
@@ -198,8 +210,33 @@ class SemanticCache:
         If a stored query in the namespace has similarity >= threshold, updates LRU
         access time and returns a SemanticCacheHit. Otherwise returns None.
         """
-        threshold = similarity_threshold if similarity_threshold is not None else self.similarity_threshold
         now = time.time()
+        norm_q = query.strip().lower()
+
+        # O(1) Exact Match Fast Path: Sub-microsecond hit without embedding or vector search
+        async with self._get_lock():
+            exact_entry = self._exact_index.get(namespace, {}).get(norm_q)
+            if exact_entry is not None:
+                if not exact_entry.is_expired(now):
+                    exact_entry.last_accessed_at = now
+                    self._hits += 1
+                    logger.debug(
+                        "Semantic cache EXACT HIT (score=1.0000, namespace=%r) for query: %r",
+                        namespace,
+                        query,
+                    )
+                    return SemanticCacheHit(
+                        query=query,
+                        matched_query=exact_entry.query,
+                        similarity_score=1.0,
+                        response=exact_entry.response,
+                        namespace=namespace,
+                        metadata=exact_entry.metadata,
+                    )
+                else:
+                    self._exact_index.get(namespace, {}).pop(norm_q, None)
+
+        threshold = similarity_threshold if similarity_threshold is not None else self.similarity_threshold
 
         # Compute query embedding if not provided (outside lock to prevent blocking concurrent lookups)
         query_emb = embedding
@@ -222,9 +259,11 @@ class SemanticCache:
             best_entry: Optional[SemanticCacheEntry] = None
 
             for entry in entries:
-                # Dot product between pre-normalized query and stored pre-normalized entry
-                dot = sum(a * b for a, b in zip(q_unit, entry.embedding))
-                score = (max(-1.0, min(1.0, dot)) + 1.0) / 2.0
+                # Fast dot product between pre-normalized query and stored pre-normalized entry
+                dot = 0.0
+                for a, b in zip(q_unit, entry.embedding):
+                    dot += a * b
+                score = (max(-1.0, min(1.0, dot)) + 1.0) * 0.5
                 if score > best_score:
                     best_score = score
                     best_entry = entry
@@ -286,9 +325,13 @@ class SemanticCache:
             ttl=entry_ttl,
         )
 
+        norm_q = query.strip().lower()
         async with self._get_lock():
             entries = self._ensure_namespace(namespace)
             entries.append(entry)
+            if namespace not in self._exact_index:
+                self._exact_index[namespace] = {}
+            self._exact_index[namespace][norm_q] = entry
             self._enforce_capacity(namespace)
         logger.debug("Stored entry in semantic cache (namespace=%r, query=%r)", namespace, query)
 
@@ -296,8 +339,10 @@ class SemanticCache:
         """Wipe all cached entries from memory, optionally scoped to a namespace."""
         if namespace is not None:
             self._entries.pop(namespace, None)
+            self._exact_index.pop(namespace, None)
         else:
             self._entries.clear()
+            self._exact_index.clear()
 
     def size(self, namespace: Optional[str] = None) -> int:
         """Return the number of stored entries (total or in a specific namespace)."""
