@@ -45,6 +45,7 @@ We adhere to [Semantic Versioning 2.0.0](https://semver.org/) and PEP 440:
 
 | Git Tag | Release Date | Target Commit | Channel | Release Summary |
 | :--- | :---: | :---: | :---: | :--- |
+| [`v0.19.10`](#v01910-sla-benchmark-performance-optimization-p2-audit-remediation--resilience-hardening) | 2026-11-26 | `09e7ef2` | **Patch** | SLA Benchmark Performance Optimization, P2 Audit Remediation & Resilience Hardening |
 | [`v0.19.9`](#v0199-rag-security--dos-protection-concurrency-hardening-and-extended-test-coverage) | 2026-11-22 | `58251e4` | **Patch** | RAG Security & DoS Protection, Concurrency Hardening, and Extended Test Coverage |
 | [`v0.19.8`](#v0198-cross-platform-path-traversal-remediation-for-linux-build-metadata--search-performance-optimizations) | 2026-11-19 | `83491a3` | **Patch** | Cross-Platform Path Traversal Remediation for Linux, Build Metadata & Search Performance Optimizations |
 | [`v0.19.7`](#v0197-p1-audit-remediation-bug-22-to-bug-27-lru-filter-bounding-fail-close-hitl--path-security) | 2026-11-18 | `v0.19.7` | **Patch** | P1 Audit Remediation (BUG-22 to BUG-27), LRU Filter Bounding, Fail-Close HITL & Path Security |
@@ -137,6 +138,54 @@ We adhere to [Semantic Versioning 2.0.0](https://semver.org/) and PEP 440:
 ---
 
 ## 🚀 Release History & Release Notes
+
+## v0.19.10: SLA Benchmark Performance Optimization, P2 Audit Remediation & Resilience Hardening
+
+> 🏷️ **Git Tag:** `v0.19.10` | 📅 **Release Date:** `2026-11-26` | 📦 **Release Channel:** `GA Patch`  
+> 🔀 **PR Title:** `release: v0.19.10 - SLA Benchmark Performance Optimization, P2 Audit Remediation & Resilience Hardening`  
+> 📝 **PR Description:** Releases v0.19.10 resolving SLA benchmark bottlenecks across cosine search, high-dimension D=1536 spaces, PII batch sanitization, token cost concurrency, and subscriber storm cache offloads, alongside remediating P2 audit findings (structured output preambles, rerank_sync loop safety, memory thread locks, multi-query candidate pools, CORS production warnings) with 405 passing tests.
+
+The `v0.19.10` patch release delivers key performance and architectural refinements across retrieval latency, high-concurrency cost accounting, guardrail throughput, and agent memory safety.
+
+---
+
+### ⚡ SLA Benchmark Performance Optimizations:
+* **Cosine Similarity & Vector Normalization Optimization:**
+  * Replaced per-element division with reciprocal multiplication (`inv = 1.0 / norm`), eliminating redundant square root allocations.
+  * Replaced pure-Python generator comprehension with unrolled `for a, b in zip(...)` loop computing dot product and both squared norms in a single pass without allocating generator frames.
+  * Delivered major latency reductions across `vectorstore_cosine_search_top5`, `vectorstore_high_dim_d1536_500_docs`, and `vectorstore_high_dim_d1536_1000_docs`.
+* **Guardrails & PII Batch Processing Fast-Path:**
+  * Added an ultra-fast character-set short-circuit check (`not has_digit and not has_at and not has_key_hint`) returning in $<0.001\text{ ms}$ for standard natural language text without evaluating regex engines.
+  * Added `ThreadPoolExecutor` parallel batch execution in `sanitize_batch()` for batches $\ge 64$ prompts, significantly reducing batch latency in `guardrails_and_pii_batch_250_prompts`.
+* **Token Cost Ledger Concurrency & Aggregates:**
+  * Added internal running aggregates (`_total_prompt_tokens`, `_total_completion_tokens`, `_total_tokens`, `_total_cost_usd`, `_by_model`) to `TokenCostTracker`.
+  * Accelerated `get_summary()` to return cached aggregates in $O(1)$ time without locking or iterating through individual records during high-frequency concurrent operations.
+* **SemanticCache Exact-Match Subscriber Storm Offload:**
+  * Added an exact-match index (`_exact_index`) to `SemanticCache` providing sub-microsecond ($<0.005\text{ ms}$) $O(1)$ retrieval for identical queries, preventing vector degradation during subscriber storm events.
+
+---
+
+### 🛡️ P2 Audit Remediation & Hardening:
+* **Resilience Against LLM Preambles in Structured Outputs:**
+  * Implemented `_extract_json_payload()` in `core/llm.py` to strip chatty conversational preambles, trailing commentary, and markdown code fences (` ```json `), ensuring clean Pydantic schema validation.
+* **Retry-After Header & Jitter in LLM Clients:**
+  * Integrated parsing of the HTTP `Retry-After` header and added randomized jitter (`random.uniform(0.01, 0.1)`) across `OpenAICompatibleClient` and `AnthropicClient` retry loops.
+* **`BaseReranker.rerank_sync()` Event Loop Safety:**
+  * Implemented `_run_sync` pattern with worker thread execution to ensure `rerank_sync()` never crashes with `RuntimeError: asyncio.run() cannot be called from a running event loop`.
+* **Candidate Pool Preservation in `MultiQueryStrategy`:**
+  * Preserved an expanded candidate pool ($\max(top\_k \times 4, 20)$) from RRF prior to reranking so cross-encoders can effectively inspect and promote better candidates.
+* **Thread Safety in `ConversationBufferMemory`:**
+  * Added `threading.RLock()` synchronization and thread-safe synchronous methods (`get_messages_sync()`, `clear_sync()`).
+* **Production CORS Security Warning:**
+  * Added logging warning when `cors_origins` is set to wildcard (`*`) in production environments.
+
+---
+
+### 🧪 Verification & Test Suite:
+* Full test suite passing at **100% (405 passed in ~20s)**.
+* Added dedicated test suite `tests/test_p2_fixes.py` covering all new behaviors.
+
+---
 
 ## v0.19.9: RAG Security & DoS Protection, Concurrency Hardening, and Extended Test Coverage
 
