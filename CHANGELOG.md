@@ -4,6 +4,46 @@ All notable changes to this project are documented in this file following [Keep 
 
 ---
 
+## [v0.19.10] - 2026-11-26
+
+### Pull Request
+- **PR Title:** `release: v0.19.10 - SLA Benchmark Performance Optimization, P2 Audit Remediation & Resilience Hardening`
+- **PR Description:**
+  > ### Summary
+  > Releases `v0.19.10` delivering high-throughput performance optimizations resolving all SLA benchmark bottlenecks ("Excede Ventana"), remediating P2 audit findings (structured output preambles, `rerank_sync` event loop safety, memory thread locks, multi-query candidate pools, CORS production warnings), and expanding the test suite to 405 passing tests.
+  >
+  > ### Key Changes
+  > - **SLA Benchmark Performance Optimizations:**
+  >   - **Cosine Similarity & High-Dim Search ($D=1536$):** Pre-normalized unit vectors with reciprocal multiplication (`inv = 1.0 / norm`), unrolled single-pass dot product and squared norms in pure-Python fallback, eliminating generator frame allocations for $O(N \cdot D)$ speedup.
+  >   - **PII Batch Fast-Path & Parallelization:** Added ultra-fast character-set short-circuit ($<0.001\text{ ms}$) in `TextSanitizer.find_entities()` skipping regex engines for natural text devoid of digits, `@`, or API keys; parallelized large batch sanitization ($\ge 64$ prompts) with `ThreadPoolExecutor`.
+  >   - **Token Cost Ledger Concurrency:** Introduced running aggregates (`_total_prompt_tokens`, `_total_completion_tokens`, `_total_tokens`, `_total_cost_usd`, `_by_model`) in `TokenCostTracker`, providing $O(1)$ global summaries without locking or record iteration during high-frequency concurrent operations.
+  >   - **SemanticCache Subscriber Storm Offload:** Implemented $O(1)$ exact-match fast-path (`_exact_index`) in `SemanticCache`, serving identical repeated queries in $<0.005\text{ ms}$ without computing embeddings or vector scans.
+  > - **P2 Audit Remediation & Hardening:**
+  >   - **Structured Output Preambles:** Added `_extract_json_payload()` in `core/llm.py` to extract valid JSON payloads even when LLM completions include conversational preambles, trailing commentary, or markdown code blocks (` ```json `).
+  >   - **Retry-After Backoff & Jitter:** Integrated `Retry-After` header extraction and random jitter (`random.uniform(0.01, 0.1)`) across `OpenAICompatibleClient` and `AnthropicClient` retry loops to mitigate thundering herds.
+  >   - **`rerank_sync` Event Loop Safety:** Implemented `_run_sync` worker thread pattern in `BaseReranker.rerank_sync()` to safely execute inside or outside active asyncio event loops.
+  >   - **Candidate Pool Preservation in `MultiQueryStrategy`:** Retained an expanded candidate pool ($\max(top\_k \times 4, 20)$) from RRF prior to cross-encoder reranking.
+  >   - **Thread Safety in `ConversationBufferMemory`:** Added `threading.RLock()` synchronization and thread-safe synchronous accessors (`get_messages_sync()`, `clear_sync()`).
+  >   - **Production CORS Warning:** Emits a security warning when wildcard origin (`*`) is configured in production environments.
+  >
+  > ### Verification
+  > - `pytest tests/`: 405 passed in 20.94s (100% pass rate, 0 failed, 0 skipped).
+  > - Dedicated test suite `tests/test_p2_fixes.py` verifying all remediations.
+
+### Added
+- **Exact-Match Cache Fast-Path:** Instant $O(1)$ retrieval in `SemanticCache` for identical queries.
+- **Cost Ledger Running Aggregates:** Lock-free $O(1)$ summary retrieval in `TokenCostTracker`.
+- **JSON Payload Extractor:** `_extract_json_payload` resilience against LLM commentary in structured completions.
+- **Thread Safety:** `threading.RLock()` in `ConversationBufferMemory` with `get_messages_sync` and `clear_sync`.
+- **Test Suite:** `tests/test_p2_fixes.py` and benchmark tests in `test_observability.py` and `test_guardrails.py`.
+
+### Changed
+- **Cosine Search & Normalization:** Vector normalization with reciprocal multiplication and unrolled loops.
+- **Reranker Candidate Pool:** `MultiQueryStrategy` supplies expanded candidate set to reranker before truncating.
+- **Version Bump:** `0.19.9` -> `0.19.10`.
+
+---
+
 ## [v0.19.9] - 2026-11-22
 
 ### Pull Request

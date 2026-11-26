@@ -202,3 +202,34 @@ def test_guardrail_and_pii_batch_processing():
     assert results[75].is_safe is False
 
 
+def test_pii_sanitizer_fast_path_and_large_batch():
+    """Verify PIISanitizer fast-path skips regex engines for natural text and processes batches in parallel."""
+    sanitizer = PIISanitizer()
+
+    # Pure natural text without digits or '@' or key hints
+    natural_texts = [
+        "Please provide an overview of the architecture and workflow",
+        "How do we configure semantic caching for latency reduction",
+        "Summarize the recent financial disclosures and quarterly filings",
+    ]
+    for text in natural_texts:
+        res = sanitizer.sanitize(text)
+        assert res.has_pii is False
+        assert len(res.entities_found) == 0
+        assert res.sanitized_text == text
+
+    # Batch of 128 prompts (triggering thread-pool parallelization)
+    batch = [f"Standard operational query without sensitive data index {i}" for i in range(128)]
+    batch[10] = "Direct queries to ceo@company.com immediately"
+    batch[50] = "Use test credit card 4532-0151-1283-0366 for staging"
+
+    results = sanitizer.sanitize_batch(batch, strategy=RedactionStrategy.REPLACE)
+    assert len(results) == 128
+    assert results[0].has_pii is False
+    assert results[10].has_pii is True
+    assert "[REDACTED_EMAIL]" in results[10].sanitized_text
+    assert results[50].has_pii is True
+    assert "[REDACTED_CREDIT_CARD]" in results[50].sanitized_text
+
+
+

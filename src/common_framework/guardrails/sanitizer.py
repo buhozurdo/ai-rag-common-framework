@@ -179,17 +179,26 @@ class PIISanitizer:
         if not text:
             return []
 
+        # Ultra-fast early exit: if text contains no digits, no '@', and no API key hint prefixes,
+        # it is impossible to match Email, Phone, Credit Card, SSN, IPv4, or API keys
+        has_at = "@" in text
+        has_hints = any(h in text for h in _API_KEY_HINTS)
+        has_digit = any(c.isdigit() for c in text)
+        if not has_digit and not has_at and not has_hints:
+            return []
+
         active_strategy = strategy or self.default_strategy
         entities: list[PIIEntity] = []
 
         # Fast pre-filtering: Count digits with early exit
         # SSN requires >= 9 digits, Phone requires >= 10 digits, Credit Card requires >= 13 digits
         digit_count = 0
-        for ch in text:
-            if ch.isdigit():
-                digit_count += 1
-                if digit_count >= 13:
-                    break
+        if has_digit:
+            for ch in text:
+                if ch.isdigit():
+                    digit_count += 1
+                    if digit_count >= 13:
+                        break
 
         # 1. API Keys (only scan if common key prefixes exist in text)
         if PIIType.API_KEY in self.enabled_types and any(h in text for h in _API_KEY_HINTS):
@@ -321,4 +330,8 @@ class PIISanitizer:
         strategy: Optional[RedactionStrategy] = None,
     ) -> list[SanitizationResult]:
         """High-throughput batch sanitization pass."""
+        if len(texts) >= 64:
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                return list(executor.map(lambda t: self.sanitize(t, strategy=strategy), texts))
         return [self.sanitize(t, strategy=strategy) for t in texts]

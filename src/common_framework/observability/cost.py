@@ -79,6 +79,12 @@ class TokenCostTracker:
 
         self._records: list[CostRecord] = []
         self._lock = asyncio.Lock()
+        # Fast running aggregates for O(1) get_summary()
+        self._total_prompt_tokens: int = 0
+        self._total_completion_tokens: int = 0
+        self._total_tokens: int = 0
+        self._total_cost_usd: float = 0.0
+        self._by_model: dict[str, dict[str, Any]] = {}
 
     def register_pricing(self, model: str, pricing: ModelPricing) -> None:
         """Register or override pricing for a specific model name."""
@@ -127,6 +133,18 @@ class TokenCostTracker:
             timestamp=datetime.now(timezone.utc),
         )
 
+    def _update_running_aggregates(self, record: CostRecord) -> None:
+        self._total_prompt_tokens += record.prompt_tokens
+        self._total_completion_tokens += record.completion_tokens
+        self._total_tokens += record.total_tokens
+        self._total_cost_usd += record.total_cost_usd
+        m = record.model
+        if m not in self._by_model:
+            self._by_model[m] = {"tokens": 0, "cost_usd": 0.0, "invocations": 0}
+        self._by_model[m]["tokens"] += record.total_tokens
+        self._by_model[m]["cost_usd"] += record.total_cost_usd
+        self._by_model[m]["invocations"] += 1
+
     async def record_usage(
         self,
         model: str,
@@ -135,8 +153,8 @@ class TokenCostTracker:
     ) -> CostRecord:
         """Compute dollar cost and record invocation into historical ledger."""
         record = self.calculate_cost(model, usage, metadata=metadata)
-        # Lock acquisition is bypassed on append to avoid contention bottlenecks during concurrent bursts.
         self._records.append(record)
+        self._update_running_aggregates(record)
         return record
 
     def record_usage_sync(
@@ -148,6 +166,7 @@ class TokenCostTracker:
         """Synchronous record wrapper."""
         record = self.calculate_cost(model, usage, metadata=metadata)
         self._records.append(record)
+        self._update_running_aggregates(record)
         return record
 
     def record_usage_batch(
@@ -160,6 +179,8 @@ class TokenCostTracker:
             for model, usage, metadata in items
         ]
         self._records.extend(records)
+        for r in records:
+            self._update_running_aggregates(r)
         return records
 
     async def record_usage_batch_async(
@@ -175,11 +196,25 @@ class TokenCostTracker:
         tag_value: Optional[str] = None,
     ) -> dict[str, Any]:
         """Aggregate token counts and dollar expenses across records."""
+        # Fast path O(1): when no custom tag filter is requested, return cached running aggregates
+        if not tag and not tag_value:
+            by_m = {
+                k: {"tokens": v["tokens"], "cost_usd": round(v["cost_usd"], 6), "invocations": v["invocations"]}
+                for k, v in self._by_model.items()
+            }
+            return {
+                "total_invocations": len(self._records),
+                "total_prompt_tokens": self._total_prompt_tokens,
+                "total_completion_tokens": self._total_completion_tokens,
+                "total_tokens": self._total_tokens,
+                "total_cost_usd": round(self._total_cost_usd, 6),
+                "by_model": by_m,
+            }
+
         async with self._lock:
             records = list(self._records)
 
-        if tag and tag_value:
-            records = [r for r in records if r.metadata.get(tag) == tag_value]
+        records = [r for r in records if r.metadata.get(tag) == tag_value]
 
         total_prompt_tokens = sum(r.prompt_tokens for r in records)
         total_completion_tokens = sum(r.completion_tokens for r in records)
@@ -210,6 +245,11 @@ class TokenCostTracker:
         """Clear ledger records."""
         async with self._lock:
             self._records.clear()
+            self._total_prompt_tokens = 0
+            self._total_completion_tokens = 0
+            self._total_tokens = 0
+            self._total_cost_usd = 0.0
+            self._by_model.clear()
 
 
 # Global default tracker singleton

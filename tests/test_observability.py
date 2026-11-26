@@ -231,3 +231,37 @@ def test_trace_span_error_capture():
     assert failed_span.name == "failing_operation"
     assert failed_span.status == "ERROR"
     assert failed_span.error_message == "Boom"
+
+
+@pytest.mark.asyncio
+async def test_token_cost_ledger_concurrency_and_aggregates():
+    """Verify concurrent usage recording updates running aggregates with O(1) retrieval."""
+    tracker = TokenCostTracker()
+
+    async def _record_worker(worker_id: int):
+        for i in range(25):
+            model = "gpt-4o" if worker_id % 2 == 0 else "claude-3-5-sonnet"
+            await tracker.record_usage(
+                model=model,
+                usage=TokenUsage(prompt_tokens=100, completion_tokens=50),
+                metadata={"worker": str(worker_id), "op": i},
+            )
+
+    # 10 workers x 25 ops = 250 operations
+    tasks = [_record_worker(w) for w in range(10)]
+    await asyncio.gather(*tasks)
+
+    summary = await tracker.get_summary()
+    assert summary["total_invocations"] == 250
+    assert summary["total_prompt_tokens"] == 250 * 100
+    assert summary["total_completion_tokens"] == 250 * 50
+    assert summary["total_tokens"] == 250 * 150
+    assert summary["total_cost_usd"] > 0.0
+    assert "gpt-4o" in summary["by_model"]
+    assert "claude-3-5-sonnet" in summary["by_model"]
+
+    # Filtered retrieval matches subset
+    worker_0_summary = await tracker.get_summary(tag="worker", tag_value="0")
+    assert worker_0_summary["total_invocations"] == 25
+    assert worker_0_summary["total_prompt_tokens"] == 2500
+

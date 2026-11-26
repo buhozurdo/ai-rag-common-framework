@@ -52,10 +52,11 @@ def _metadata_matches(doc_meta: dict[str, Any], query_meta: dict[str, Any]) -> b
 
 def normalize_vector(v: list[float]) -> tuple[list[float], float]:
     """Compute Euclidean (L2) norm and return (unit_vector, original_norm)."""
-    norm = math.sqrt(sum(x * x for x in v))
+    norm = math.sqrt(sum([x * x for x in v]))
     if norm == 0.0:
         return list(v), 0.0
-    return [x / norm for x in v], norm
+    inv = 1.0 / norm
+    return [x * inv for x in v], norm
 
 
 def cosine_similarity(v1: list[float], v2: list[float]) -> float:
@@ -66,20 +67,20 @@ def cosine_similarity(v1: list[float], v2: list[float]) -> float:
     if len(v1) != len(v2):
         raise ValueError(f"Vector dimension mismatch: query vector has {len(v1)} dims, document has {len(v2)} dims")
 
-    dot_product = sum(a * b for a, b in zip(v1, v2))
-    norm_v1 = math.sqrt(sum(a * a for a in v1))
-    norm_v2 = math.sqrt(sum(b * b for b in v2))
+    dot_product = 0.0
+    norm_sq1 = 0.0
+    norm_sq2 = 0.0
+    for a, b in zip(v1, v2):
+        dot_product += a * b
+        norm_sq1 += a * a
+        norm_sq2 += b * b
 
-    if norm_v1 == 0.0 or norm_v2 == 0.0:
+    if norm_sq1 == 0.0 or norm_sq2 == 0.0:
         return 0.0
 
-    score = dot_product / (norm_v1 * norm_v2)
-    # Map the full cosine range [-1, +1] uniformly to [0.0, 1.0].
-    # Using conditional mapping (passthrough for positive, (s+1)/2 for negative) produces a
-    # discontinuity at 0: a barely-negative vector gets ~0.5 while an orthogonal vector stays at
-    # 0.0, completely inverting the semantic ordering. The uniform mapping preserves rank order.
+    score = dot_product / (math.sqrt(norm_sq1) * math.sqrt(norm_sq2))
     score = max(-1.0, min(1.0, score))
-    return (score + 1.0) / 2.0
+    return (score + 1.0) * 0.5
 
 
 class BaseVectorStore(ABC):
@@ -389,8 +390,10 @@ class InMemoryVectorStore(BaseVectorStore):
 
             unit_doc = norm_store.get(doc_id)
             if unit_doc is not None:
-                dot = sum(a * b for a, b in zip(q_unit, unit_doc))
-                sim = (max(-1.0, min(1.0, dot)) + 1.0) / 2.0
+                dot = 0.0
+                for a, b in zip(q_unit, unit_doc):
+                    dot += a * b
+                sim = (max(-1.0, min(1.0, dot)) + 1.0) * 0.5
                 scored_py.append((sim, doc))
 
         if len(scored_py) <= top_k:

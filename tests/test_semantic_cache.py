@@ -134,6 +134,26 @@ async def test_cache_miss_and_hit_exact() -> None:
 
 
 @pytest.mark.asyncio
+async def test_exact_match_fast_path_bypasses_embedding_provider() -> None:
+    """Verify exact query match bypasses embedding provider completely for sub-microsecond offload."""
+    class FailingEmbedding(BaseEmbeddingProvider):
+        async def embed_query(self, text: str) -> list[float]:
+            raise RuntimeError("Should never be called for exact cache hit")
+
+        async def embed_documents(self, texts: list[str]) -> list[list[float]]:
+            raise RuntimeError("Should never be called")
+
+    cache = SemanticCache(embedding_provider=FailingEmbedding())
+    await cache.set("DIRECTV NFL Sunday Ticket", "Channel 705", embedding=[1.0, 0.0, 0.0])
+
+    # Exact match lookup (case-insensitive): must succeed without invoking FailingEmbedding
+    hit = await cache.get("directv nfl sunday ticket")
+    assert hit is not None
+    assert hit.response == "Channel 705"
+    assert hit.similarity_score == 1.0
+
+
+@pytest.mark.asyncio
 async def test_cache_hit_semantic_similarity() -> None:
     # [1.0, 0.0, 0.0] and [0.99, 0.1, 0.0] have high cosine similarity
     provider = DeterministicEmbedding({
