@@ -169,6 +169,23 @@ class BaseLLMClient(ABC):
         """Execute a completion and validate the response against a Pydantic schema."""
         pass
 
+    async def complete_structured(
+        self,
+        messages: list[ChatMessage],
+        response_model: type[T],
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        **kwargs: Any,
+    ) -> T:
+        """Alias for structured_complete for ergonomic compatibility."""
+        return await self.structured_complete(
+            messages=messages,
+            response_model=response_model,
+            model=model,
+            temperature=temperature,
+            **kwargs,
+        )
+
     async def complete_stream(
         self,
         messages: list[ChatMessage],
