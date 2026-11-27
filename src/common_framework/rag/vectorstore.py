@@ -6,11 +6,12 @@ import asyncio
 import heapq
 import json
 import math
-import tempfile
 from abc import ABC, abstractmethod
 from collections import OrderedDict
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 from typing import Any, Optional, Union
+
+from common_framework.core.security import resolve_safe_path
 
 from common_framework.rag.bm25 import BM25Index, reciprocal_rank_fusion
 from common_framework.rag.models import Document, SearchResult
@@ -189,59 +190,9 @@ class InMemoryVectorStore(BaseVectorStore):
         filepath: Union[str, Path],
         base_dir: Optional[Union[str, Path]] = None,
     ) -> Path:
-        """Resolve and validate filepath against a designated base directory.
-
-        Ensures the target filepath does not escape the allowed base directory via
-        path traversal (e.g. `../` or external absolute paths).
-
-        Args:
-            filepath: Target file path (relative or absolute).
-            base_dir: Optional override for the designated base directory. If None,
-                `self.base_dir` is used. If neither is set, paths are validated
-                against `Path.cwd()` and system temp directories to prevent unauthorized filesystem access.
-
-        Returns:
-            Resolved absolute Path.
-
-        Raises:
-            ValueError: If the resolved path lies outside the designated base directory.
-        """
-        raw_path = Path(filepath)
-        str_path = str(filepath)
-
-        # Block external cross-platform absolute paths (e.g. Windows drive/UNC paths on POSIX systems)
-        if (PureWindowsPath(str_path).is_absolute() or bool(PureWindowsPath(str_path).drive)) and not raw_path.is_absolute():
-            raise ValueError(
-                f"Path traversal detected: '{filepath}' is an external absolute path"
-            )
-
+        """Resolve and validate filepath against a designated base directory."""
         designated = base_dir if base_dir is not None else self.base_dir
-
-        if designated is not None:
-            resolved_base = Path(designated).resolve()
-            if not raw_path.is_absolute():
-                candidate = (resolved_base / raw_path).resolve()
-            else:
-                candidate = raw_path.resolve()
-
-            if not candidate.is_relative_to(resolved_base):
-                raise ValueError(
-                    f"Path traversal detected: '{filepath}' resolves to '{candidate}', "
-                    f"which is outside designated base directory '{resolved_base}'"
-                )
-            return candidate
-
-        # No base_dir designated: protect against arbitrary path traversal by restricting to cwd and system temp dir
-        candidate = (Path.cwd() / raw_path).resolve() if not raw_path.is_absolute() else raw_path.resolve()
-        cwd_resolved = Path.cwd().resolve()
-        temp_resolved = Path(tempfile.gettempdir()).resolve()
-
-        if not (candidate.is_relative_to(cwd_resolved) or candidate.is_relative_to(temp_resolved)):
-            raise ValueError(
-                f"Path traversal detected: '{filepath}' resolves to '{candidate}', "
-                f"which is outside current working directory '{cwd_resolved}'"
-            )
-        return candidate
+        return resolve_safe_path(filepath, base_dir=designated)
 
     def _ensure_collection(self, collection: str) -> tuple[dict[str, Document], BM25Index]:
         if collection not in self._collections:

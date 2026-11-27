@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Optional
 import httpx
 
+from common_framework.core._async import HttpClientMixin
 from common_framework.core.config import Settings, get_settings
 from common_framework.core.exceptions import AuthenticationError, ConfigurationError, LLMProviderError
 from common_framework.core.security import validate_provider_base_url
@@ -91,7 +92,7 @@ class MockEmbeddingProvider(BaseEmbeddingProvider):
         return [self._generate_vector(t) for t in texts]
 
 
-class OpenAICompatibleEmbeddingProvider(BaseEmbeddingProvider):
+class OpenAICompatibleEmbeddingProvider(HttpClientMixin, BaseEmbeddingProvider):
     """Embedding provider using OpenAI or any OpenAI-compatible API (Ollama, vLLM, DeepSeek)."""
 
     def __init__(
@@ -111,22 +112,7 @@ class OpenAICompatibleEmbeddingProvider(BaseEmbeddingProvider):
         )
         self.base_url = validate_provider_base_url(base_url or self.settings.openai_base_url)
         self.model = model
-        self._external_client = client
-        self._internal_client: Optional[httpx.AsyncClient] = None
-
-    def _get_client(self) -> httpx.AsyncClient:
-        """Return the active HTTP client: external injection or internal persistent pool."""
-        if self._external_client is not None:
-            return self._external_client
-        if self._internal_client is None or self._internal_client.is_closed:
-            self._internal_client = httpx.AsyncClient(timeout=self.settings.default_timeout_seconds)
-        return self._internal_client
-
-    async def aclose(self) -> None:
-        """Close persistent internal HTTP connection pool if owned."""
-        if self._internal_client is not None and not self._internal_client.is_closed:
-            await self._internal_client.aclose()
-            self._internal_client = None
+        self._init_http_client(client=client)
 
     def _get_headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}

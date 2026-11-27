@@ -6,13 +6,14 @@ Lightweight graph-based orchestrator coordinating multi-step cyclic and acyclic 
 from __future__ import annotations
 
 import asyncio
-import concurrent.futures
 import copy
 import inspect
 import time
 import uuid
 from typing import Any, Callable, Coroutine, Optional, Union, TYPE_CHECKING
 from pydantic import BaseModel, Field
+
+from common_framework.core._async import run_sync
 
 if TYPE_CHECKING:
     from common_framework.agents.checkpoints import BaseCheckpointSaver
@@ -206,25 +207,7 @@ class StateGraph:
         thread_id: Optional[str] = None,
     ) -> WorkflowResult:
         """Synchronous wrapper for run() supporting execution within running loops."""
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-
-        if loop and loop.is_running():
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(
-                    lambda: asyncio.run(
-                        self.run(
-                            initial_state=initial_state,
-                            max_steps=max_steps,
-                            checkpoint_callback=checkpoint_callback,
-                            checkpointer=checkpointer,
-                            thread_id=thread_id,
-                        )
-                    )
-                ).result()
-        return asyncio.run(
+        return run_sync(
             self.run(
                 initial_state=initial_state,
                 max_steps=max_steps,

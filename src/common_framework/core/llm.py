@@ -10,10 +10,11 @@ import random
 import re
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any, AsyncIterator, Generic, Literal, Optional, Sequence, TypeVar, Union
+from typing import Any, AsyncIterator, Callable, Generic, Literal, Optional, Sequence, TypeVar, Union
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from common_framework.core._async import HttpClientMixin
 from common_framework.core.config import Settings, get_settings
 from common_framework.core.exceptions import (
     AllProvidersFailedError,
@@ -122,6 +123,76 @@ def _extract_json_payload(raw: str) -> str:
     return text
 
 
+def _parse_retry_after(headers: httpx.Headers) -> Optional[float]:
+    """Parse a numeric Retry-After header value in seconds, returning None if absent/invalid."""
+    raw = headers.get("retry-after")
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
+
+
+async def _post_json_with_retry(
+    http_client: httpx.AsyncClient,
+    url: str,
+    payload: dict[str, Any],
+    headers: dict[str, str],
+    timeout: float,
+    max_retries: int,
+    provider_name: str,
+    retryable_statuses: tuple[int, ...],
+    error_handler: Callable[[httpx.HTTPStatusError], None],
+) -> dict[str, Any]:
+    """POST JSON payload with exponential backoff, jitter, and Retry-After support."""
+    for attempt in range(max_retries + 1):
+        try:
+            response = await http_client.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=timeout,
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in retryable_statuses and attempt < max_retries:
+                backoff = 0.2 * (2 ** attempt) + random.uniform(0.01, 0.1)
+                retry_after = _parse_retry_after(exc.response.headers)
+                if retry_after is not None:
+                    backoff = max(retry_after, backoff)
+                logger.warning(
+                    "Transient HTTP %s from %s. Retrying in %.2fs (attempt %d/%d)...",
+                    exc.response.status_code,
+                    provider_name,
+                    backoff,
+                    attempt + 1,
+                    max_retries,
+                )
+                await asyncio.sleep(backoff)
+                continue
+            error_handler(exc)
+        except httpx.RequestError as exc:
+            if attempt < max_retries:
+                backoff = 0.2 * (2 ** attempt) + random.uniform(0.01, 0.1)
+                logger.warning(
+                    "Network connection error with %s: %s. Retrying in %.2fs (attempt %d/%d)...",
+                    provider_name,
+                    exc,
+                    backoff,
+                    attempt + 1,
+                    max_retries,
+                )
+                await asyncio.sleep(backoff)
+                continue
+            raise LLMProviderError(
+                f"Network error connecting to {provider_name}: {exc}",
+                provider=provider_name,
+            ) from exc
+    raise LLMProviderError(f"Exceeded max retries ({max_retries}) connecting to {provider_name}")
+
+
 class BaseLLMClient(ABC):
     """Abstract base class for all LLM provider clients."""
 
@@ -211,6 +282,37 @@ class BaseLLMClient(ABC):
             finish_reason="stop",
         )
 
+    async def _structured_complete_via_prompt(
+        self,
+        messages: list[ChatMessage],
+        response_model: type[T],
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        **kwargs: Any,
+    ) -> T:
+        """Execute structured completion by injecting JSON schema instructions and validating."""
+        schema = response_model.model_json_schema()
+        system_instruction = (
+            "You MUST respond ONLY with a valid JSON object matching this JSON schema:\n"
+            f"{json.dumps(schema, indent=2)}\n"
+            "Do not output markdown code blocks, explanations, or any other text."
+        )
+        enhanced_messages = [ChatMessage(role=Role.SYSTEM, content=system_instruction), *messages]
+        response = await self.complete(
+            messages=enhanced_messages,
+            model=model,
+            temperature=temperature if temperature is not None else 0.0,
+            **kwargs,
+        )
+        content = _extract_json_payload(response.content)
+        try:
+            return response_model.model_validate_json(content)
+        except (ValidationError, json.JSONDecodeError) as exc:
+            raise StructuredOutputError(
+                f"Failed to validate model response into {response_model.__name__}: {exc}",
+                raw_output=response.content,
+            ) from exc
+
     async def aclose(self) -> None:
         """Release underlying network resources and close persistent HTTP connection pools."""
         pass
@@ -222,7 +324,7 @@ class BaseLLMClient(ABC):
         await self.aclose()
 
 
-class OpenAICompatibleClient(BaseLLMClient):
+class OpenAICompatibleClient(HttpClientMixin, BaseLLMClient):
     """Client for OpenAI and any OpenAI-compatible endpoint (Ollama, Gemini OpenAI endpoint, vLLM, DeepSeek)."""
 
     def __init__(
@@ -241,32 +343,7 @@ class OpenAICompatibleClient(BaseLLMClient):
             raw_key.get_secret_value() if hasattr(raw_key, "get_secret_value") else raw_key
         )
         self.base_url = validate_provider_base_url(base_url or self.settings.openai_base_url)
-        self._external_client = client
-        self._internal_client: Optional[httpx.AsyncClient] = None
-
-    def _get_client(self) -> httpx.AsyncClient:
-        """Return the active HTTP client: external injection or internal persistent pool."""
-        if self._external_client is not None:
-            return self._external_client
-        try:
-            current_loop = asyncio.get_running_loop()
-        except RuntimeError:
-            current_loop = None
-
-        if (
-            self._internal_client is None
-            or self._internal_client.is_closed
-            or getattr(self, "_bound_loop", None) is not current_loop
-        ):
-            self._internal_client = httpx.AsyncClient(timeout=self.settings.default_timeout_seconds)
-            self._bound_loop = current_loop
-        return self._internal_client
-
-    async def aclose(self) -> None:
-        """Close persistent internal HTTP connection pool if owned."""
-        if self._internal_client is not None and not self._internal_client.is_closed:
-            await self._internal_client.aclose()
-            self._internal_client = None
+        self._init_http_client(client=client)
 
     def _get_headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -284,13 +361,11 @@ class OpenAICompatibleClient(BaseLLMClient):
                 provider=self.provider_name,
             ) from exc
         if status == 429:
-            retry_header = exc.response.headers.get("retry-after")
-            retry_after = float(retry_header) if retry_header and retry_header.isdigit() else None
             raise RateLimitError(
                 f"Rate limit exceeded for {self.provider_name}: {text}",
                 status_code=status,
                 provider=self.provider_name,
-                retry_after=retry_after,
+                retry_after=_parse_retry_after(exc.response.headers),
             ) from exc
         if status == 404:
             raise ModelNotFoundError(
@@ -324,89 +399,46 @@ class OpenAICompatibleClient(BaseLLMClient):
         }
 
         url = f"{self.base_url}/chat/completions"
-        headers = self._get_headers()
-        max_retries = self.settings.default_max_retries
+        data = await _post_json_with_retry(
+            http_client=self._get_client(),
+            url=url,
+            payload=payload,
+            headers=self._get_headers(),
+            timeout=self.settings.default_timeout_seconds,
+            max_retries=self.settings.default_max_retries,
+            provider_name=self.provider_name,
+            retryable_statuses=(429, 500, 502, 503, 504),
+            error_handler=self._handle_http_error,
+        )
 
-        async def _send(http_client: httpx.AsyncClient) -> ChatResponse:
-            for attempt in range(max_retries + 1):
-                try:
-                    response = await http_client.post(
-                        url,
-                        json=payload,
-                        headers=headers,
-                        timeout=self.settings.default_timeout_seconds,
-                    )
-                    response.raise_for_status()
-                    data = response.json()
+        choices = data.get("choices") or [{}]
+        choice = choices[0] if choices else {}
+        message = choice.get("message") or {}
+        content = message.get("content", "") or ""
 
-                    choices = data.get("choices") or [{}]
-                    choice = choices[0] if choices else {}
-                    message = choice.get("message") or {}
-                    content = message.get("content", "") or ""
+        usage_data = data.get("usage") or {}
+        prompt_tokens_details = usage_data.get("prompt_tokens_details") or {}
+        cached_tokens = (
+            prompt_tokens_details.get("cached_tokens")
+            or usage_data.get("cached_tokens")
+            or usage_data.get("cachedContentTokenCount", 0)
+            or 0
+        )
+        usage = TokenUsage(
+            prompt_tokens=usage_data.get("prompt_tokens", 0),
+            completion_tokens=usage_data.get("completion_tokens", 0),
+            total_tokens=usage_data.get("total_tokens", 0),
+            cached_tokens=cached_tokens,
+        )
 
-                    usage_data = data.get("usage") or {}
-                    prompt_tokens_details = usage_data.get("prompt_tokens_details") or {}
-                    cached_tokens = (
-                        prompt_tokens_details.get("cached_tokens")
-                        or usage_data.get("cached_tokens")
-                        or usage_data.get("cachedContentTokenCount", 0)
-                        or 0
-                    )
-                    usage = TokenUsage(
-                        prompt_tokens=usage_data.get("prompt_tokens", 0),
-                        completion_tokens=usage_data.get("completion_tokens", 0),
-                        total_tokens=usage_data.get("total_tokens", 0),
-                        cached_tokens=cached_tokens,
-                    )
-
-                    res = ChatResponse(
-                        content=content,
-                        model=data.get("model", target_model),
-                        usage=usage,
-                        raw=data,
-                    )
-                    self._record_cost_if_enabled(res)
-                    return res
-                except httpx.HTTPStatusError as exc:
-                    if exc.response.status_code in (429, 500, 502, 503, 504) and attempt < max_retries:
-                        backoff = 0.2 * (2 ** attempt) + random.uniform(0.01, 0.1)
-                        retry_header = exc.response.headers.get("retry-after")
-                        if retry_header:
-                            try:
-                                backoff = max(float(retry_header), backoff)
-                            except ValueError:
-                                pass
-                        logger.warning(
-                            "Transient HTTP %s from %s. Retrying in %.2fs (attempt %d/%d)...",
-                            exc.response.status_code,
-                            self.provider_name,
-                            backoff,
-                            attempt + 1,
-                            max_retries,
-                        )
-                        await asyncio.sleep(backoff)
-                        continue
-                    self._handle_http_error(exc)
-                except httpx.RequestError as exc:
-                    if attempt < max_retries:
-                        backoff = 0.2 * (2 ** attempt) + random.uniform(0.01, 0.1)
-                        logger.warning(
-                            "Network connection error with %s: %s. Retrying in %.2fs (attempt %d/%d)...",
-                            self.provider_name,
-                            exc,
-                            backoff,
-                            attempt + 1,
-                            max_retries,
-                        )
-                        await asyncio.sleep(backoff)
-                        continue
-                    raise LLMProviderError(
-                        f"Network error connecting to {self.provider_name}: {exc}",
-                        provider=self.provider_name,
-                    ) from exc
-            raise LLMProviderError(f"Exceeded max retries ({max_retries}) connecting to {self.provider_name}")
-
-        return await _send(self._get_client())
+        res = ChatResponse(
+            content=content,
+            model=data.get("model", target_model),
+            usage=usage,
+            raw=data,
+        )
+        self._record_cost_if_enabled(res)
+        return res
 
     async def structured_complete(
         self,
@@ -416,32 +448,14 @@ class OpenAICompatibleClient(BaseLLMClient):
         temperature: Optional[float] = None,
         **kwargs: Any,
     ) -> T:
-        schema = response_model.model_json_schema()
-        system_instruction = (
-            "You MUST respond ONLY with a valid JSON object matching this JSON schema:\n"
-            f"{json.dumps(schema, indent=2)}\n"
-            "Do not output markdown code blocks, explanations, or any other text."
-        )
-
-        enhanced_messages = [ChatMessage(role=Role.SYSTEM, content=system_instruction), *messages]
-
-        response = await self.complete(
-            messages=enhanced_messages,
+        return await self._structured_complete_via_prompt(
+            messages=messages,
+            response_model=response_model,
             model=model,
-            temperature=temperature if temperature is not None else 0.0,
+            temperature=temperature,
             response_format={"type": "json_object"},
             **kwargs,
         )
-
-        content = _extract_json_payload(response.content)
-
-        try:
-            return response_model.model_validate_json(content)
-        except (ValidationError, json.JSONDecodeError) as exc:
-            raise StructuredOutputError(
-                f"Failed to validate model response into {response_model.__name__}: {exc}",
-                raw_output=response.content,
-            ) from exc
 
     async def complete_stream(
         self,
@@ -595,7 +609,7 @@ class OllamaClient(OpenAICompatibleClient):
         )
 
 
-class AnthropicClient(BaseLLMClient):
+class AnthropicClient(HttpClientMixin, BaseLLMClient):
     """Client for Anthropic's native Messages API (Claude 3.5 Sonnet, Haiku, Opus)."""
 
     def __init__(
@@ -614,32 +628,7 @@ class AnthropicClient(BaseLLMClient):
         default_url = getattr(self.settings, "anthropic_base_url", "https://api.anthropic.com/v1")
         self.base_url = validate_provider_base_url(base_url or default_url)
         self.provider_name = "anthropic"
-        self._external_client = client
-        self._internal_client: Optional[httpx.AsyncClient] = None
-
-    def _get_client(self) -> httpx.AsyncClient:
-        """Return the active HTTP client: external injection or internal persistent pool."""
-        if self._external_client is not None:
-            return self._external_client
-        try:
-            current_loop = asyncio.get_running_loop()
-        except RuntimeError:
-            current_loop = None
-
-        if (
-            self._internal_client is None
-            or self._internal_client.is_closed
-            or getattr(self, "_bound_loop", None) is not current_loop
-        ):
-            self._internal_client = httpx.AsyncClient(timeout=self.settings.default_timeout_seconds)
-            self._bound_loop = current_loop
-        return self._internal_client
-
-    async def aclose(self) -> None:
-        """Close persistent internal HTTP connection pool if owned."""
-        if self._internal_client is not None and not self._internal_client.is_closed:
-            await self._internal_client.aclose()
-            self._internal_client = None
+        self._init_http_client(client=client)
 
     def _get_headers(self) -> dict[str, str]:
         headers = {
@@ -665,17 +654,11 @@ class AnthropicClient(BaseLLMClient):
                 provider="anthropic",
             ) from exc
         if status_code == 429:
-            retry_header = exc.response.headers.get("retry-after")
-            retry_after = (
-                float(retry_header)
-                if retry_header and retry_header.replace(".", "", 1).isdigit()
-                else None
-            )
             raise RateLimitError(
                 f"Anthropic rate limit exceeded: {message}",
                 status_code=429,
                 provider="anthropic",
-                retry_after=retry_after,
+                retry_after=_parse_retry_after(exc.response.headers),
             ) from exc
         if status_code == 404:
             raise ModelNotFoundError(
@@ -690,14 +673,15 @@ class AnthropicClient(BaseLLMClient):
             provider="anthropic",
         ) from exc
 
-    async def complete(
+    def _build_payload(
         self,
         messages: list[ChatMessage],
-        model: Optional[str] = None,
-        temperature: Optional[float] = None,
-        max_tokens: int = 4096,
+        model: Optional[str],
+        temperature: Optional[float],
+        max_tokens: int,
+        stream: bool = False,
         **kwargs: Any,
-    ) -> ChatResponse:
+    ) -> tuple[str, dict[str, Any]]:
         target_model = model or "claude-3-5-sonnet-latest"
         target_temp = (
             temperature if temperature is not None else self.settings.default_temperature
@@ -725,94 +709,66 @@ class AnthropicClient(BaseLLMClient):
             "temperature": target_temp,
             **kwargs,
         }
+        if stream:
+            payload["stream"] = True
         if system_prompts:
             payload["system"] = "\n\n".join(system_prompts)
+        return target_model, payload
 
-        url = f"{self.base_url}/messages"
-        headers = self._get_headers()
-        max_retries = self.settings.default_max_retries
+    async def complete(
+        self,
+        messages: list[ChatMessage],
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        max_tokens: int = 4096,
+        **kwargs: Any,
+    ) -> ChatResponse:
+        target_model, payload = self._build_payload(
+            messages=messages,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            **kwargs,
+        )
+        data = await _post_json_with_retry(
+            http_client=self._get_client(),
+            url=f"{self.base_url}/messages",
+            payload=payload,
+            headers=self._get_headers(),
+            timeout=self.settings.default_timeout_seconds,
+            max_retries=self.settings.default_max_retries,
+            provider_name="Anthropic",
+            retryable_statuses=(429, 500, 502, 503, 504, 529),
+            error_handler=self._handle_http_error,
+        )
 
-        async def _send(http_client: httpx.AsyncClient) -> ChatResponse:
-            for attempt in range(max_retries + 1):
-                try:
-                    response = await http_client.post(
-                        url,
-                        json=payload,
-                        headers=headers,
-                        timeout=self.settings.default_timeout_seconds,
-                    )
-                    response.raise_for_status()
-                    data = response.json()
+        content_blocks = data.get("content") or []
+        text_parts = [
+            b.get("text", "")
+            for b in content_blocks
+            if isinstance(b, dict) and b.get("type") == "text"
+        ]
+        content = "".join(text_parts)
 
-                    content_blocks = data.get("content") or []
-                    text_parts = [
-                        b.get("text", "")
-                        for b in content_blocks
-                        if isinstance(b, dict) and b.get("type") == "text"
-                    ]
-                    content = "".join(text_parts)
+        usage_data = data.get("usage") or {}
+        input_toks = usage_data.get("input_tokens", 0)
+        output_toks = usage_data.get("output_tokens", 0)
+        cached_toks = usage_data.get("cache_read_input_tokens", 0) or 0
+        usage = TokenUsage(
+            prompt_tokens=input_toks,
+            completion_tokens=output_toks,
+            total_tokens=input_toks + output_toks,
+            cached_tokens=cached_toks,
+        )
 
-                    usage_data = data.get("usage") or {}
-                    input_toks = usage_data.get("input_tokens", 0)
-                    output_toks = usage_data.get("output_tokens", 0)
-                    cached_toks = usage_data.get("cache_read_input_tokens", 0) or 0
-                    usage = TokenUsage(
-                        prompt_tokens=input_toks,
-                        completion_tokens=output_toks,
-                        total_tokens=input_toks + output_toks,
-                        cached_tokens=cached_toks,
-                    )
-
-                    res = ChatResponse(
-                        content=content,
-                        model=data.get("model", target_model),
-                        usage=usage,
-                        raw=data,
-                    )
-                    self._record_cost_if_enabled(res)
-                    return res
-                except httpx.HTTPStatusError as exc:
-                    # Anthropic uses 429 and 529 for overloaded
-                    if (
-                        exc.response.status_code in (429, 500, 502, 503, 504, 529)
-                        and attempt < max_retries
-                    ):
-                        backoff = 0.2 * (2**attempt) + random.uniform(0.01, 0.1)
-                        retry_header = exc.response.headers.get("retry-after")
-                        if retry_header:
-                            try:
-                                backoff = max(float(retry_header), backoff)
-                            except ValueError:
-                                pass
-                        logger.warning(
-                            "Transient HTTP %s from Anthropic. Retrying in %.2fs (attempt %d/%d)...",
-                            exc.response.status_code,
-                            backoff,
-                            attempt + 1,
-                            max_retries,
-                        )
-                        await asyncio.sleep(backoff)
-                        continue
-                    self._handle_http_error(exc)
-                except httpx.RequestError as exc:
-                    if attempt < max_retries:
-                        backoff = 0.2 * (2**attempt) + random.uniform(0.01, 0.1)
-                        logger.warning(
-                            "Network connection error with Anthropic: %s. Retrying in %.2fs (attempt %d/%d)...",
-                            exc,
-                            backoff,
-                            attempt + 1,
-                            max_retries,
-                        )
-                        await asyncio.sleep(backoff)
-                        continue
-                    raise LLMProviderError(
-                        f"Network error connecting to Anthropic: {exc}",
-                        provider="anthropic",
-                    ) from exc
-            raise LLMProviderError(f"Exceeded max retries ({max_retries}) connecting to Anthropic")
-
-        return await _send(self._get_client())
+        res = ChatResponse(
+            content=content,
+            model=data.get("model", target_model),
+            usage=usage,
+            raw=data,
+        )
+        self._record_cost_if_enabled(res)
+        return res
 
     async def structured_complete(
         self,
@@ -822,31 +778,13 @@ class AnthropicClient(BaseLLMClient):
         temperature: Optional[float] = None,
         **kwargs: Any,
     ) -> T:
-        schema = response_model.model_json_schema()
-        system_instruction = (
-            "You MUST respond ONLY with a valid JSON object matching this JSON schema:\n"
-            f"{json.dumps(schema, indent=2)}\n"
-            "Do not output markdown code blocks, explanations, or any other text."
-        )
-
-        enhanced_messages = [ChatMessage(role=Role.SYSTEM, content=system_instruction), *messages]
-
-        response = await self.complete(
-            messages=enhanced_messages,
+        return await self._structured_complete_via_prompt(
+            messages=messages,
+            response_model=response_model,
             model=model,
-            temperature=temperature if temperature is not None else 0.0,
+            temperature=temperature,
             **kwargs,
         )
-
-        content = _extract_json_payload(response.content)
-
-        try:
-            return response_model.model_validate_json(content)
-        except (ValidationError, json.JSONDecodeError) as exc:
-            raise StructuredOutputError(
-                f"Failed to validate Anthropic response into {response_model.__name__}: {exc}",
-                raw_output=response.content,
-            ) from exc
 
     async def complete_stream(
         self,
@@ -856,36 +794,14 @@ class AnthropicClient(BaseLLMClient):
         max_tokens: int = 4096,
         **kwargs: Any,
     ) -> AsyncIterator[ChatStreamChunk]:
-        target_model = model or "claude-3-5-sonnet-latest"
-        target_temp = (
-            temperature if temperature is not None else self.settings.default_temperature
-        )
-
-        system_prompts: list[str] = []
-        anthropic_messages: list[dict[str, Any]] = []
-
-        for m in messages:
-            role_val = m.role.value if isinstance(m.role, Role) else str(m.role)
-            if role_val == "system":
-                system_prompts.append(m.content)
-            elif role_val in ("user", "tool"):
-                anthropic_messages.append({"role": "user", "content": m.content})
-            elif role_val == "assistant":
-                anthropic_messages.append({"role": "assistant", "content": m.content})
-
-        if not anthropic_messages:
-            anthropic_messages.append({"role": "user", "content": "Hello"})
-
-        payload: dict[str, Any] = {
-            "model": target_model,
-            "messages": anthropic_messages,
-            "max_tokens": kwargs.pop("max_tokens", max_tokens),
-            "temperature": target_temp,
-            "stream": True,
+        target_model, payload = self._build_payload(
+            messages=messages,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True,
             **kwargs,
-        }
-        if system_prompts:
-            payload["system"] = "\n\n".join(system_prompts)
+        )
 
         url = f"{self.base_url}/messages"
         headers = self._get_headers()
@@ -1046,6 +962,62 @@ class FallbackLLMClient(BaseLLMClient):
         for candidate in self.candidates:
             await candidate.client.aclose()
 
+    @staticmethod
+    def _build_error_record(
+        idx: int,
+        provider: str,
+        model: Optional[str],
+        exc: Exception,
+    ) -> dict[str, Any]:
+        return {
+            "candidate_index": idx,
+            "provider": provider,
+            "model": model,
+            "error": str(exc),
+            "exception_type": type(exc).__name__,
+            "status_code": getattr(exc, "status_code", None),
+        }
+
+    async def _run_cascade(
+        self,
+        operation_label: str,
+        call_fn: Callable[[FallbackCandidate, Optional[str]], Any],
+    ) -> tuple[Any, list[dict[str, Any]]]:
+        attempts: list[dict[str, Any]] = []
+        last_exception: Optional[Exception] = None
+
+        for idx, candidate in enumerate(self.candidates):
+            effective_model = candidate.model
+            provider_label = candidate.provider_name
+            try:
+                result = await call_fn(candidate, effective_model)
+                if attempts:
+                    logger.info(
+                        "%s succeeded on candidate %d/%d (%s) after %d failure(s).",
+                        operation_label,
+                        idx + 1,
+                        len(self.candidates),
+                        provider_label,
+                        len(attempts),
+                    )
+                return result, attempts
+            except self.fallback_exceptions as exc:
+                last_exception = exc
+                attempts.append(self._build_error_record(idx, provider_label, effective_model, exc))
+                logger.warning(
+                    "Fallback candidate %d/%d (%s) failed %s: %s. Failing over...",
+                    idx + 1,
+                    len(self.candidates),
+                    provider_label,
+                    operation_label.lower(),
+                    exc,
+                )
+
+        raise AllProvidersFailedError(
+            message=f"All {len(self.candidates)} LLM candidates in fallback sequence failed {operation_label.lower()}. Last error: {last_exception}",
+            errors=attempts,
+        ) from last_exception
+
     async def complete(
         self,
         messages: list[ChatMessage],
@@ -1053,56 +1025,18 @@ class FallbackLLMClient(BaseLLMClient):
         temperature: Optional[float] = None,
         **kwargs: Any,
     ) -> ChatResponse:
-        attempts: list[dict[str, Any]] = []
-        last_exception: Optional[Exception] = None
-
-        for idx, candidate in enumerate(self.candidates):
-            effective_model = candidate.model or model
-            provider_label = candidate.provider_name
-            try:
-                response = await candidate.client.complete(
-                    messages=messages,
-                    model=effective_model,
-                    temperature=temperature,
-                    **kwargs,
-                )
-                if attempts:
-                    response.fallback_attempts = attempts
-                    logger.info(
-                        "Fallback succeeded on candidate %d/%d (%s, model=%s) after %d failure(s).",
-                        idx + 1,
-                        len(self.candidates),
-                        provider_label,
-                        response.model,
-                        len(attempts),
-                    )
-                return response
-            except self.fallback_exceptions as exc:
-                last_exception = exc
-                err_record = {
-                    "candidate_index": idx,
-                    "provider": provider_label,
-                    "model": effective_model,
-                    "error": str(exc),
-                    "exception_type": type(exc).__name__,
-                    "status_code": getattr(exc, "status_code", None),
-                }
-                attempts.append(err_record)
-                logger.warning(
-                    "Fallback candidate %d/%d (%s, model=%s) failed with %s (%s). Failing over to next candidate...",
-                    idx + 1,
-                    len(self.candidates),
-                    provider_label,
-                    effective_model,
-                    type(exc).__name__,
-                    exc,
-                )
-                continue
-
-        raise AllProvidersFailedError(
-            message=f"All {len(self.candidates)} LLM candidates in fallback sequence failed. Last error: {last_exception}",
-            errors=attempts,
-        ) from last_exception
+        response, attempts = await self._run_cascade(
+            "Completion",
+            lambda c, m: c.client.complete(
+                messages=messages,
+                model=m or model,
+                temperature=temperature,
+                **kwargs,
+            ),
+        )
+        if attempts:
+            response.fallback_attempts = attempts
+        return response
 
     async def structured_complete(
         self,
@@ -1112,53 +1046,17 @@ class FallbackLLMClient(BaseLLMClient):
         temperature: Optional[float] = None,
         **kwargs: Any,
     ) -> T:
-        attempts: list[dict[str, Any]] = []
-        last_exception: Optional[Exception] = None
-
-        for idx, candidate in enumerate(self.candidates):
-            effective_model = candidate.model or model
-            provider_label = candidate.provider_name
-            try:
-                result = await candidate.client.structured_complete(
-                    messages=messages,
-                    response_model=response_model,
-                    model=effective_model,
-                    temperature=temperature,
-                    **kwargs,
-                )
-                if attempts:
-                    logger.info(
-                        "Structured completion succeeded on candidate %d/%d (%s) after %d failure(s).",
-                        idx + 1,
-                        len(self.candidates),
-                        provider_label,
-                        len(attempts),
-                    )
-                return result
-            except self.fallback_exceptions as exc:
-                last_exception = exc
-                err_record = {
-                    "candidate_index": idx,
-                    "provider": provider_label,
-                    "model": effective_model,
-                    "error": str(exc),
-                    "exception_type": type(exc).__name__,
-                    "status_code": getattr(exc, "status_code", None),
-                }
-                attempts.append(err_record)
-                logger.warning(
-                    "Fallback candidate %d/%d (%s) failed structured completion: %s. Failing over...",
-                    idx + 1,
-                    len(self.candidates),
-                    provider_label,
-                    exc,
-                )
-                continue
-
-        raise AllProvidersFailedError(
-            message=f"All {len(self.candidates)} LLM candidates in fallback sequence failed structured completion. Last error: {last_exception}",
-            errors=attempts,
-        ) from last_exception
+        result, _ = await self._run_cascade(
+            "Structured completion",
+            lambda c, m: c.client.structured_complete(
+                messages=messages,
+                response_model=response_model,
+                model=m or model,
+                temperature=temperature,
+                **kwargs,
+            ),
+        )
+        return result
 
     async def complete_stream(
         self,

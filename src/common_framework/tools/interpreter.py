@@ -15,6 +15,7 @@ import time
 from typing import Any, Callable, Optional
 from pydantic import BaseModel, Field
 
+from common_framework.core._async import run_sync
 from common_framework.tools.base import Tool
 
 
@@ -228,15 +229,7 @@ class CodeInterpreter:
 
     def run_sync(self, code: str) -> ExecutionResult:
         """Synchronously execute Python code, handling active event loops safely."""
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-
-        if loop and loop.is_running():
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(lambda: asyncio.run(self.run(code))).result()
-        return asyncio.run(self.run(code))
+        return run_sync(self.run(code))
 
     def as_tool(
         self,

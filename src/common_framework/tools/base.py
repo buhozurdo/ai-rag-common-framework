@@ -9,6 +9,7 @@ from typing import Any, Callable, Coroutine, Optional, Union, get_type_hints
 from pydantic import BaseModel, create_model
 from pydantic.fields import FieldInfo
 
+from common_framework.core._async import run_sync
 from common_framework.core.exceptions import FrameworkError
 
 
@@ -121,13 +122,7 @@ class Tool:
 
     def execute_sync(self, *, approved: bool = False, **kwargs: Any) -> Any:
         """Synchronously execute the tool, managing the event loop automatically."""
-        try:
-            asyncio.get_running_loop()
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(asyncio.run, self.execute(approved=approved, **kwargs)).result()
-        except RuntimeError:
-            return asyncio.run(self.execute(approved=approved, **kwargs))
+        return run_sync(self.execute(approved=approved, **kwargs))
 
     async def __call__(self, *args: Any, approved: bool = False, **kwargs: Any) -> Any:
         """Allow calling the tool directly as a callable object."""

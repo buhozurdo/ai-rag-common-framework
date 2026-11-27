@@ -50,20 +50,19 @@ if __name__ == "__main__":
 '''
 
 _ENV_EXAMPLE_TEMPLATE = '''# AI RAG Common Framework Environment Configuration
-ENVIRONMENT=development
+FRAMEWORK_ENV=development
 LOG_LEVEL=INFO
-APP_NAME=my-ai-rag-service
+DEFAULT_LLM_PROVIDER=gemini
+DEFAULT_LLM_MODEL=gemini-2.5-flash
 
 # LLM Providers (Configure at least one)
+GEMINI_API_KEY=
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
-COHERE_API_KEY=
 
-# Local LLM / Ollama Endpoint (Optional)
-OPENAI_COMPATIBLE_BASE_URL=http://localhost:11434
-
-# Security & CORS
-ALLOWED_ORIGINS=["*"]
+# Provider Endpoints (Optional)
+OPENAI_BASE_URL=https://api.openai.com/v1
+OLLAMA_BASE_URL=http://localhost:11434
 '''
 
 _README_TEMPLATE = '''# {project_name}

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import concurrent.futures
 import hashlib
 import json
 import logging
 import xml.sax.saxutils
 from typing import Any, AsyncIterator, Iterable, Optional, TYPE_CHECKING, Union
+
+from common_framework.core._async import run_sync
 
 from common_framework.core.llm import (
     BaseLLMClient,
@@ -379,27 +380,7 @@ class RAGEngine:
 
     def _run_sync(self, coro: Any) -> Any:
         """Execute a coroutine synchronously, avoiding event loop conflicts and cross-loop deadlocks."""
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-
-        if loop is not None and loop.is_running():
-            def _worker_runner() -> Any:
-                worker_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(worker_loop)
-                try:
-                    return worker_loop.run_until_complete(coro)
-                finally:
-                    try:
-                        worker_loop.run_until_complete(worker_loop.shutdown_asyncgens())
-                    finally:
-                        worker_loop.close()
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(_worker_runner).result()
-
-        return asyncio.run(coro)
+        return run_sync(coro)
 
     def ingest_documents_sync(
         self,

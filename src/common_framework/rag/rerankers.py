@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import concurrent.futures
 import math
 import re
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 import httpx
+
+from common_framework.core._async import HttpClientMixin, run_sync
 
 from common_framework.core.config import Settings, get_settings
 from common_framework.core.exceptions import AuthenticationError, ConfigurationError, LLMProviderError
@@ -31,27 +32,7 @@ class BaseReranker(ABC):
         pass
 
     def _run_sync(self, coro: Any) -> Any:
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-
-        if loop is not None and loop.is_running():
-            def _worker_runner() -> Any:
-                worker_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(worker_loop)
-                try:
-                    return worker_loop.run_until_complete(coro)
-                finally:
-                    try:
-                        worker_loop.run_until_complete(worker_loop.shutdown_asyncgens())
-                    finally:
-                        worker_loop.close()
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                return executor.submit(_worker_runner).result()
-
-        return asyncio.run(coro)
+        return run_sync(coro)
 
     def rerank_sync(
         self,
@@ -170,7 +151,7 @@ class LocalCrossEncoderReranker(BaseReranker):
         return scored[:limit]
 
 
-class CohereReranker(BaseReranker):
+class CohereReranker(HttpClientMixin, BaseReranker):
     """Cohere Rerank API provider for enterprise cross-encoder scoring."""
 
     DEFAULT_BASE_URL = "https://api.cohere.com/v2"
@@ -193,17 +174,22 @@ class CohereReranker(BaseReranker):
         raw_base_url = (base_url or self.DEFAULT_BASE_URL).rstrip("/")
         self.base_url = validate_provider_base_url(raw_base_url)
         self.timeout = timeout
-        self._http_client: Optional[httpx.AsyncClient] = None
+        self._init_http_client(timeout=timeout)
+
+    @property
+    def _http_client(self) -> Optional[httpx.AsyncClient]:
+        return self._internal_client
+
+    @_http_client.setter
+    def _http_client(self, client: Optional[httpx.AsyncClient]) -> None:
+        self._internal_client = client
+        try:
+            self._bound_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._bound_loop = None
 
     def _get_http_client(self) -> httpx.AsyncClient:
-        if self._http_client is None or self._http_client.is_closed:
-            self._http_client = httpx.AsyncClient(timeout=self.timeout)
-        return self._http_client
-
-    async def aclose(self) -> None:
-        if self._http_client is not None and not self._http_client.is_closed:
-            await self._http_client.aclose()
-            self._http_client = None
+        return self._get_client()
 
     async def rerank(
         self,

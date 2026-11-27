@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import concurrent.futures
 import logging
 import re
 from abc import ABC, abstractmethod
 from typing import Any, Optional, Sequence, TYPE_CHECKING
 
+from common_framework.core._async import run_sync
 from common_framework.core.llm import BaseLLMClient, ChatMessage, LLMFactory, Role
 from common_framework.rag.models import Document, SearchResult
 
@@ -117,31 +117,16 @@ class BaseRetrievalStrategy(ABC):
         **kwargs: Any,
     ) -> list[SearchResult]:
         """Synchronously execute the retrieval strategy."""
-        try:
-            asyncio.get_running_loop()
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(
-                    asyncio.run,
-                    self.retrieve(
-                        query=query,
-                        engine=engine,
-                        top_k=top_k,
-                        collection=collection,
-                        filter_metadata=filter_metadata,
-                        **kwargs,
-                    ),
-                ).result()
-        except RuntimeError:
-            return asyncio.run(
-                self.retrieve(
-                    query=query,
-                    engine=engine,
-                    top_k=top_k,
-                    collection=collection,
-                    filter_metadata=filter_metadata,
-                    **kwargs,
-                )
+        return run_sync(
+            self.retrieve(
+                query=query,
+                engine=engine,
+                top_k=top_k,
+                collection=collection,
+                filter_metadata=filter_metadata,
+                **kwargs,
             )
+        )
 
 
 _MULTI_QUERY_PROMPT_DEFAULT = """You are an AI language model assistant. Your task is to generate {num_queries} different versions or perspectives of the given user query to retrieve relevant documents from a vector database. By generating multiple perspectives on the user query, your goal is to help overcome distance-metric and phrasing limitations.

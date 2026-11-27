@@ -9,8 +9,10 @@ import re
 import sqlite3
 import struct
 import time
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 from typing import Any, Optional, Union
+
+from common_framework.core.security import resolve_safe_path
 
 from common_framework.rag.bm25 import reciprocal_rank_fusion
 from common_framework.rag.models import Document, SearchResult
@@ -34,46 +36,8 @@ def _resolve_safe_path(
     filepath: Union[str, Path],
     base_dir: Optional[Union[str, Path]] = None,
 ) -> Path:
-    """Resolve and validate filepath against a designated base directory.
-
-    Ensures the target filepath does not escape the allowed base directory via
-    path traversal (e.g. `../` or external absolute paths).
-    """
-    raw_path = Path(filepath)
-    str_path = str(filepath)
-
-    # Block external cross-platform absolute paths (e.g. Windows drive/UNC paths on POSIX systems)
-    if (PureWindowsPath(str_path).is_absolute() or bool(PureWindowsPath(str_path).drive)) and not raw_path.is_absolute():
-        raise ValueError(
-            f"Path traversal detected: '{filepath}' is an external absolute path"
-        )
-
-    designated = base_dir
-
-    if designated is not None:
-        resolved_base = Path(designated).resolve()
-        if not raw_path.is_absolute():
-            candidate = (resolved_base / raw_path).resolve()
-        else:
-            candidate = raw_path.resolve()
-
-        if not candidate.is_relative_to(resolved_base):
-            raise ValueError(
-                f"Path traversal detected: '{filepath}' resolves to '{candidate}', "
-                f"which is outside designated base directory '{resolved_base}'"
-            )
-        return candidate
-
-    if not raw_path.is_absolute():
-        candidate = (Path.cwd() / raw_path).resolve()
-        if not candidate.is_relative_to(Path.cwd()):
-            raise ValueError(
-                f"Path traversal detected: '{filepath}' resolves to '{candidate}', "
-                f"which is outside current working directory '{Path.cwd()}'"
-            )
-        return candidate
-
-    return raw_path.resolve()
+    """Resolve and validate filepath against a designated base directory."""
+    return resolve_safe_path(filepath, base_dir=base_dir, allow_absolute_without_base=True)
 
 
 def _pack_vector(vec: list[float]) -> bytes:

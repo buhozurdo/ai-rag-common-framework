@@ -13,6 +13,7 @@ import re
 from typing import Any, Callable, Coroutine, Optional, Union
 from pydantic import BaseModel, Field
 
+from common_framework.core._async import run_sync
 from common_framework.core.llm import BaseLLMClient, ChatMessage, LLMFactory, Role
 
 logger = logging.getLogger("common_framework.agents.supervisor")
@@ -232,14 +233,4 @@ class AgentSupervisor:
 
     def run_sync(self, task: str) -> SupervisorResponse:
         """Synchronous convenience wrapper for run()."""
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-
-        if loop and loop.is_running():
-            import concurrent.futures
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                return pool.submit(lambda: asyncio.run(self.run(task))).result()
-        return asyncio.run(self.run(task))
+        return run_sync(self.run(task))

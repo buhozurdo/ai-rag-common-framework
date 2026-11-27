@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+import tempfile
 import urllib.parse
-from typing import FrozenSet, Optional, Set
+from pathlib import Path, PureWindowsPath
+from typing import FrozenSet, Optional, Set, Union
 
 
 # Blocked cloud metadata hosts and IP targets (IMDSv1, IMDSv2, GCP, Azure, OpenStack, Alibaba, DigitalOcean, Tencent)
@@ -152,3 +154,54 @@ def validate_provider_base_url(
             pass
 
     return stripped.rstrip("/")
+
+
+def resolve_safe_path(
+    filepath: Union[str, Path],
+    base_dir: Optional[Union[str, Path]] = None,
+    allow_absolute_without_base: bool = False,
+) -> Path:
+    """Resolve and validate filepath against a designated base directory.
+
+    Ensures the target filepath does not escape the allowed base directory via
+    path traversal (e.g. `../` or external/cross-platform absolute paths).
+    """
+    raw_path = Path(filepath)
+    str_path = str(filepath)
+
+    # Block external cross-platform absolute paths (e.g. Windows drive/UNC paths on POSIX systems)
+    if (PureWindowsPath(str_path).is_absolute() or bool(PureWindowsPath(str_path).drive)) and not raw_path.is_absolute():
+        raise ValueError(
+            f"Path traversal detected: '{filepath}' is an external absolute path"
+        )
+
+    if base_dir is not None:
+        resolved_base = Path(base_dir).resolve()
+        candidate = (resolved_base / raw_path).resolve() if not raw_path.is_absolute() else raw_path.resolve()
+        if not candidate.is_relative_to(resolved_base):
+            raise ValueError(
+                f"Path traversal detected: '{filepath}' resolves to '{candidate}', "
+                f"which is outside designated base directory '{resolved_base}'"
+            )
+        return candidate
+
+    if raw_path.is_absolute() and allow_absolute_without_base:
+        return raw_path.resolve()
+
+    cwd_resolved = Path.cwd().resolve()
+    candidate = (cwd_resolved / raw_path).resolve() if not raw_path.is_absolute() else raw_path.resolve()
+    if allow_absolute_without_base:
+        if not candidate.is_relative_to(cwd_resolved):
+            raise ValueError(
+                f"Path traversal detected: '{filepath}' resolves to '{candidate}', "
+                f"which is outside current working directory '{cwd_resolved}'"
+            )
+        return candidate
+
+    temp_resolved = Path(tempfile.gettempdir()).resolve()
+    if not (candidate.is_relative_to(cwd_resolved) or candidate.is_relative_to(temp_resolved)):
+        raise ValueError(
+            f"Path traversal detected: '{filepath}' resolves to '{candidate}', "
+            f"which is outside current working directory '{cwd_resolved}'"
+        )
+    return candidate
