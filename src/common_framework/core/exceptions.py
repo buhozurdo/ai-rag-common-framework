@@ -99,6 +99,32 @@ class AllProvidersFailedError(LLMProviderError):
         self.errors = errors or []
 
 
+class CircuitBreakerOpenError(LLMProviderError):
+    """Raised when a circuit breaker is OPEN and fast-fails calls to protect an upstream provider."""
+
+    def __init__(
+        self,
+        message: str = "Circuit breaker is open",
+        provider: Optional[str] = None,
+        retry_after: Optional[float] = None,
+        breaker_name: Optional[str] = None,
+        details: Optional[dict[str, Any]] = None,
+    ) -> None:
+        merged_details = dict(details or {})
+        if breaker_name is not None:
+            merged_details.setdefault("breaker_name", breaker_name)
+        if retry_after is not None:
+            merged_details.setdefault("retry_after", retry_after)
+        super().__init__(
+            message=message,
+            status_code=503,
+            provider=provider,
+            details=merged_details,
+        )
+        self.retry_after = retry_after
+        self.breaker_name = breaker_name
+
+
 class MCPClientError(FrameworkError):
     """Base exception for Model Context Protocol (MCP) client failures."""
     pass
