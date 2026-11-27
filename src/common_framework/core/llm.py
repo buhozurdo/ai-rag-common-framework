@@ -968,7 +968,7 @@ class FallbackLLMClient(BaseLLMClient):
                 raise ConfigurationError(
                     "circuit_breakers length must match the number of fallback candidates."
                 )
-            self.circuit_breakers: list[Optional[CircuitBreaker]] = list(circuit_breakers)
+            self.circuit_breakers = list(circuit_breakers)
         elif enable_circuit_breaker or circuit_breaker_config is not None:
             from common_framework.core.resilience import CircuitBreaker
 
