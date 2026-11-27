@@ -36,6 +36,13 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "SemanticCacheHit": ("common_framework.core.cache", "SemanticCacheHit"),
     "SemanticCacheStats": ("common_framework.core.cache", "SemanticCacheStats"),
     "validate_provider_base_url": ("common_framework.core.security", "validate_provider_base_url"),
+    # Core resilience & circuit breaker
+    "CircuitBreaker": ("common_framework.core.resilience", "CircuitBreaker"),
+    "CircuitBreakerConfig": ("common_framework.core.resilience", "CircuitBreakerConfig"),
+    "CircuitBreakerOpenError": ("common_framework.core.exceptions", "CircuitBreakerOpenError"),
+    "CircuitBreakerStats": ("common_framework.core.resilience", "CircuitBreakerStats"),
+    "CircuitState": ("common_framework.core.resilience", "CircuitState"),
+    "ResilientLLMClient": ("common_framework.core.resilience", "ResilientLLMClient"),
     # Core exceptions
     "AllProvidersFailedError": ("common_framework.core.exceptions", "AllProvidersFailedError"),
     "AuthenticationError": ("common_framework.core.exceptions", "AuthenticationError"),

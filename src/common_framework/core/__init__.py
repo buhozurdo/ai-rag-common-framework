@@ -8,6 +8,7 @@ from common_framework.core.deprecation import (
 )
 from common_framework.core.exceptions import (
     AuthenticationError,
+    CircuitBreakerOpenError,
     ConfigurationError,
     FrameworkError,
     LLMError,
@@ -24,6 +25,13 @@ from common_framework.core.llm import (
     Role,
     TokenUsage,
 )
+from common_framework.core.resilience import (
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    CircuitBreakerStats,
+    CircuitState,
+    ResilientLLMClient,
+)
 
 __all__ = [
     "Settings",
@@ -36,6 +44,12 @@ __all__ = [
     "RateLimitError",
     "ModelNotFoundError",
     "StructuredOutputError",
+    "CircuitBreakerOpenError",
+    "CircuitState",
+    "CircuitBreakerConfig",
+    "CircuitBreakerStats",
+    "CircuitBreaker",
+    "ResilientLLMClient",
     "BaseLLMClient",
     "ChatMessage",
     "ChatResponse",
