@@ -4,6 +4,34 @@ All notable changes to this project are documented in this file following [Keep 
 
 ---
 
+## [v0.20.0] - 2026-11-26
+
+### Pull Request
+- **PR Title:** `release: v0.20.0 - Native PostgresVectorStore with pgvector, HNSW/IVFFlat Indexes & JSONB Filtering`
+- **PR Description:**
+  > ### Summary
+  > Releases `v0.20.0` introducing `PostgresVectorStore` (`FEAT-43`), a native enterprise vector store backed by PostgreSQL + `pgvector` with HNSW and IVFFlat approximate nearest neighbor indexing, GIN-indexed JSONB metadata containment filtering (`@>`), PostgreSQL FTS + RRF hybrid search, and connection pooling supporting both `asyncpg` and `psycopg` (v3).
+  >
+  > ### Key Changes
+  > - **`PostgresVectorStore` (`common_framework.rag.storage.postgres`):**
+  >   - Native `pgvector` similarity search supporting `cosine` (`<=>`), `l2` (`<->`), and `inner_product` (`<#>`) distance metrics normalized to `[0.0, 1.0]` scores.
+  >   - Configurable `HNSW` (`m`, `ef_construction`, `hnsw_ef_search`) and `IVFFlat` (`lists`, `ivfflat_probes`) index creation and query-time tuning.
+  >   - Multi-collection isolation, GIN-indexed JSONB metadata `@>` filtering, and hybrid search combining dense retrieval with PostgreSQL `ts_rank_cd` via `reciprocal_rank_fusion`.
+  >   - Connection pool lifecycle supporting `asyncpg`, `psycopg_pool`, or externally injected pools with strict SQL identifier and vector dimension validation.
+  > - **Package Exports & Extras:** Exported `PostgresVectorStore` at `common_framework`, `common_framework.rag`, and `common_framework.rag.storage`, and added `asyncpg>=0.29.0` to the `[rag]` optional dependency extra.
+  >
+  > ### Verification
+  > - `python -m pytest`: 412 passed (including `tests/test_postgres_vectorstore.py`).
+
+### Added
+- **`PostgresVectorStore` (`FEAT-43`):** Enterprise PostgreSQL + `pgvector` backend with HNSW/IVFFlat indexing, JSONB `@>` filtering, hybrid search, and `asyncpg`/`psycopg` pool support.
+- **Test Suite:** `tests/test_postgres_vectorstore.py` covering DDL generation, CRUD, JSONB filtering, hybrid search, validation, and `RAGEngine` integration across both driver adapters.
+
+### Changed
+- **Version Bump:** `0.19.10` -> `0.20.0`.
+
+---
+
 ## [v0.19.10] - 2026-11-26
 
 ### Pull Request

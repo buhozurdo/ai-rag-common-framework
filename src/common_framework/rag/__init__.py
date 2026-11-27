@@ -24,6 +24,7 @@ from common_framework.rag.vectorstore import (
     cosine_similarity,
 )
 
+from common_framework.rag.storage.postgres import PostgresVectorStore
 from common_framework.rag.storage.sqlite import SQLiteVectorStore
 from common_framework.rag.loaders import (
     BaseLoader,
@@ -57,6 +58,7 @@ __all__ = [
     "EmbeddingFactory",
     "BaseVectorStore",
     "InMemoryVectorStore",
+    "PostgresVectorStore",
     "SQLiteVectorStore",
     "cosine_similarity",
     "RAGEngine",
