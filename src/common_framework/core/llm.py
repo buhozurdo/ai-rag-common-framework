@@ -10,7 +10,7 @@ import random
 import re
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any, AsyncIterator, Callable, Generic, Literal, Optional, Sequence, TypeVar, Union
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Generic, Literal, Optional, Sequence, TypeVar, Union
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -19,6 +19,7 @@ from common_framework.core.config import Settings, get_settings
 from common_framework.core.exceptions import (
     AllProvidersFailedError,
     AuthenticationError,
+    CircuitBreakerOpenError,
     ConfigurationError,
     LLMProviderError,
     ModelNotFoundError,
@@ -26,6 +27,13 @@ from common_framework.core.exceptions import (
     StructuredOutputError,
 )
 from common_framework.core.security import validate_provider_base_url
+
+if TYPE_CHECKING:
+    from common_framework.core.resilience import (
+        CircuitBreaker,
+        CircuitBreakerConfig,
+        CircuitBreakerStats,
+    )
 
 logger = logging.getLogger("common_framework.llm")
 
@@ -933,6 +941,9 @@ class FallbackLLMClient(BaseLLMClient):
         clients: Sequence[Union[BaseLLMClient, tuple[BaseLLMClient, Optional[str]], FallbackCandidate]],
         fallback_on: Optional[tuple[type[Exception], ...]] = None,
         settings: Optional[Settings] = None,
+        enable_circuit_breaker: bool = False,
+        circuit_breaker_config: Optional[CircuitBreakerConfig] = None,
+        circuit_breakers: Optional[Sequence[Optional[CircuitBreaker]]] = None,
     ) -> None:
         super().__init__(settings=settings)
         if not clients:
@@ -951,6 +962,30 @@ class FallbackLLMClient(BaseLLMClient):
                 raise ConfigurationError(f"Invalid fallback candidate: {item!r}")
 
         self.fallback_exceptions = fallback_on or self.DEFAULT_FALLBACK_EXCEPTIONS
+
+        if circuit_breakers is not None:
+            if len(circuit_breakers) != len(self.candidates):
+                raise ConfigurationError(
+                    "circuit_breakers length must match the number of fallback candidates."
+                )
+            self.circuit_breakers: list[Optional[CircuitBreaker]] = list(circuit_breakers)
+        elif enable_circuit_breaker or circuit_breaker_config is not None:
+            from common_framework.core.resilience import CircuitBreaker
+
+            self.circuit_breakers = [
+                CircuitBreaker(
+                    name=f"fallback:{idx}:{c.provider_name}",
+                    config=circuit_breaker_config,
+                    failure_exceptions=self.fallback_exceptions,
+                )
+                for idx, c in enumerate(self.candidates)
+            ]
+        else:
+            self.circuit_breakers = [None] * len(self.candidates)
+
+    def circuit_breaker_stats(self) -> list[CircuitBreakerStats]:
+        """Return stats snapshots for all configured candidate circuit breakers."""
+        return [cb.stats() for cb in self.circuit_breakers if cb is not None]
 
     @property
     def primary_client(self) -> BaseLLMClient:
@@ -986,11 +1021,16 @@ class FallbackLLMClient(BaseLLMClient):
         attempts: list[dict[str, Any]] = []
         last_exception: Optional[Exception] = None
 
+        caught_exceptions = (CircuitBreakerOpenError, *self.fallback_exceptions)
         for idx, candidate in enumerate(self.candidates):
             effective_model = candidate.model
             provider_label = candidate.provider_name
+            breaker = self.circuit_breakers[idx]
             try:
-                result = await call_fn(candidate, effective_model)
+                if breaker is not None:
+                    result = await breaker.call(call_fn, candidate, effective_model)
+                else:
+                    result = await call_fn(candidate, effective_model)
                 if attempts:
                     logger.info(
                         "%s succeeded on candidate %d/%d (%s) after %d failure(s).",
@@ -1001,7 +1041,7 @@ class FallbackLLMClient(BaseLLMClient):
                         len(attempts),
                     )
                 return result, attempts
-            except self.fallback_exceptions as exc:
+            except caught_exceptions as exc:
                 last_exception = exc
                 attempts.append(self._build_error_record(idx, provider_label, effective_model, exc))
                 logger.warning(
@@ -1068,11 +1108,17 @@ class FallbackLLMClient(BaseLLMClient):
         attempts: list[dict[str, Any]] = []
         last_exception: Optional[Exception] = None
 
+        caught_exceptions = (CircuitBreakerOpenError, *self.fallback_exceptions)
         for idx, candidate in enumerate(self.candidates):
             effective_model = candidate.model or model
             provider_label = candidate.provider_name
+            breaker = self.circuit_breakers[idx]
             started = False
+            is_probe = False
+            stream_finished = False
             try:
+                if breaker is not None:
+                    is_probe = await breaker.acquire()
                 stream_iter = candidate.client.complete_stream(
                     messages=messages,
                     model=effective_model,
@@ -1082,8 +1128,14 @@ class FallbackLLMClient(BaseLLMClient):
                 async for chunk in stream_iter:
                     started = True
                     yield chunk
+                if breaker is not None:
+                    await breaker.record_success(is_probe=is_probe)
+                stream_finished = True
                 return
-            except self.fallback_exceptions as exc:
+            except caught_exceptions as exc:
+                if breaker is not None:
+                    await breaker.record_failure(exc, is_probe=is_probe)
+                stream_finished = True
                 if started:
                     # Once chunks have been emitted to the caller, we cannot rewind and restart
                     raise
@@ -1105,6 +1157,14 @@ class FallbackLLMClient(BaseLLMClient):
                     exc,
                 )
                 continue
+            except Exception as exc:
+                if breaker is not None:
+                    await breaker.record_failure(exc, is_probe=is_probe)
+                stream_finished = True
+                raise
+            finally:
+                if breaker is not None and is_probe and not stream_finished:
+                    await breaker.release_probe()
 
         raise AllProvidersFailedError(
             message=f"All {len(self.candidates)} LLM candidates in fallback sequence failed streaming. Last error: {last_exception}",
@@ -1143,11 +1203,32 @@ class LLMFactory:
         return instance
 
     @staticmethod
+    def _wrap_with_circuit_breaker(
+        instance: BaseLLMClient,
+        circuit_breaker: Union[bool, CircuitBreaker, CircuitBreakerConfig],
+        provider_label: str,
+    ) -> BaseLLMClient:
+        if not circuit_breaker:
+            return instance
+        from common_framework.core.resilience import (
+            CircuitBreaker,
+            CircuitBreakerConfig,
+            ResilientLLMClient,
+        )
+
+        if isinstance(circuit_breaker, CircuitBreaker):
+            return ResilientLLMClient(client=instance, breaker=circuit_breaker)
+        if isinstance(circuit_breaker, CircuitBreakerConfig):
+            return ResilientLLMClient(client=instance, config=circuit_breaker, name=provider_label)
+        return ResilientLLMClient(client=instance, name=provider_label)
+
+    @staticmethod
     def create(
         provider: Optional[str] = None,
         settings: Optional[Settings] = None,
         client: Optional[httpx.AsyncClient] = None,
         with_fallbacks: bool = False,
+        circuit_breaker: Union[bool, CircuitBreaker, CircuitBreakerConfig] = False,
         **kwargs: Any,
     ) -> BaseLLMClient:
         cfg = settings or get_settings()
@@ -1156,21 +1237,30 @@ class LLMFactory:
         if with_fallbacks or (provider is None and cfg.fallback_providers):
             chain = [target_provider] + [p for p in cfg.fallback_providers if p != target_provider]
             if len(chain) > 1:
+                from common_framework.core.resilience import CircuitBreakerConfig as _CBConfig
+
+                cb_cfg = circuit_breaker if isinstance(circuit_breaker, _CBConfig) else None
                 return LLMFactory.create_with_fallbacks(
                     providers=chain,
                     settings=cfg,
                     client=client,
+                    enable_circuit_breaker=bool(circuit_breaker),
+                    circuit_breaker_config=cb_cfg,
                     **kwargs,
                 )
 
         if target_provider == "gemini":
-            return LLMFactory._safe_instantiate(GeminiClient, settings=cfg, client=client, **kwargs)
+            created = LLMFactory._safe_instantiate(GeminiClient, settings=cfg, client=client, **kwargs)
+            return LLMFactory._wrap_with_circuit_breaker(created, circuit_breaker, target_provider)
         if target_provider == "openai":
-            return LLMFactory._safe_instantiate(OpenAICompatibleClient, provider_name="openai", settings=cfg, client=client, **kwargs)
+            created = LLMFactory._safe_instantiate(OpenAICompatibleClient, provider_name="openai", settings=cfg, client=client, **kwargs)
+            return LLMFactory._wrap_with_circuit_breaker(created, circuit_breaker, target_provider)
         if target_provider == "anthropic":
-            return LLMFactory._safe_instantiate(AnthropicClient, settings=cfg, client=client, **kwargs)
+            created = LLMFactory._safe_instantiate(AnthropicClient, settings=cfg, client=client, **kwargs)
+            return LLMFactory._wrap_with_circuit_breaker(created, circuit_breaker, target_provider)
         if target_provider == "ollama":
-            return LLMFactory._safe_instantiate(OllamaClient, settings=cfg, client=client, **kwargs)
+            created = LLMFactory._safe_instantiate(OllamaClient, settings=cfg, client=client, **kwargs)
+            return LLMFactory._wrap_with_circuit_breaker(created, circuit_breaker, target_provider)
         if target_provider in ("deepseek", "groq", "vllm"):
             default_urls = {
                 "deepseek": "https://api.deepseek.com",
@@ -1184,7 +1274,7 @@ class LLMFactory:
                     api_key = "vllm"
                 else:
                     api_key = cfg.get_api_key_for_provider(target_provider) or "none"
-            return LLMFactory._safe_instantiate(
+            created = LLMFactory._safe_instantiate(
                 OpenAICompatibleClient,
                 provider_name=target_provider,
                 base_url=base_url,
@@ -1193,8 +1283,10 @@ class LLMFactory:
                 client=client,
                 **kwargs,
             )
+            return LLMFactory._wrap_with_circuit_breaker(created, circuit_breaker, target_provider)
         if target_provider in ("custom", "generic"):
-            return LLMFactory._safe_instantiate(OpenAICompatibleClient, provider_name="custom", settings=cfg, client=client, **kwargs)
+            created = LLMFactory._safe_instantiate(OpenAICompatibleClient, provider_name="custom", settings=cfg, client=client, **kwargs)
+            return LLMFactory._wrap_with_circuit_breaker(created, circuit_breaker, target_provider)
 
         raise ConfigurationError(
             f"Unsupported LLM provider: {target_provider!r}. "
@@ -1207,6 +1299,8 @@ class LLMFactory:
         settings: Optional[Settings] = None,
         client: Optional[httpx.AsyncClient] = None,
         fallback_on: Optional[tuple[type[Exception], ...]] = None,
+        enable_circuit_breaker: bool = False,
+        circuit_breaker_config: Optional[CircuitBreakerConfig] = None,
         **kwargs: Any,
     ) -> FallbackLLMClient:
         """Create a FallbackLLMClient cascading across the given provider sequence."""
@@ -1218,5 +1312,11 @@ class LLMFactory:
             LLMFactory.create(provider=p, settings=cfg, client=client, with_fallbacks=False, **kwargs)
             for p in providers
         ]
-        return FallbackLLMClient(clients=clients, fallback_on=fallback_on, settings=cfg)
+        return FallbackLLMClient(
+            clients=clients,
+            fallback_on=fallback_on,
+            settings=cfg,
+            enable_circuit_breaker=enable_circuit_breaker,
+            circuit_breaker_config=circuit_breaker_config,
+        )
 
