@@ -163,6 +163,7 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "BaseVectorStore": ("common_framework.rag.vectorstore", "BaseVectorStore"),
     "InMemoryVectorStore": ("common_framework.rag.vectorstore", "InMemoryVectorStore"),
     "cosine_similarity": ("common_framework.rag.vectorstore", "cosine_similarity"),
+    "PostgresVectorStore": ("common_framework.rag.storage.postgres", "PostgresVectorStore"),
     "SQLiteVectorStore": ("common_framework.rag.storage.sqlite", "SQLiteVectorStore"),
     # Tools
     "Tool": ("common_framework.tools.base", "Tool"),

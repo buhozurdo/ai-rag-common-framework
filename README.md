@@ -4,14 +4,14 @@
 
 [![PyPI](https://img.shields.io/pypi/v/ai-rag-common-framework.svg)](https://pypi.org/project/ai-rag-common-framework/)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/Version-v0.19.10%20(Stable)-brightgreen.svg)](CHANGELOG.md)
-[![Tests](https://img.shields.io/badge/Tests-405%20passed%20(100%25)-success.svg)](tests/)
+[![Version](https://img.shields.io/badge/Version-v0.20.0%20(Stable)-brightgreen.svg)](CHANGELOG.md)
+[![Tests](https://img.shields.io/badge/Tests-412%20passed%20(100%25)-success.svg)](tests/)
 [![Coverage](https://img.shields.io/badge/Coverage-91%25-brightgreen.svg)](tests/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
 
-## 🚀 Overview & Current Status: `v0.19.10` (SLA Benchmark Performance Optimization & P2 Audit Remediation)
+## 🚀 Overview & Current Status: `v0.20.0` (Native PostgreSQL + pgvector Storage & HNSW/IVFFlat Indexing)
 
 **AI RAG Common Framework** is engineered as a clean, idiomatic, and dependency-light standard library for modern AI engineering. It replaces sprawling, over-engineered stacks with composable, typed primitives that work seamlessly across asynchronous coroutines and synchronous pipelines.
 
@@ -24,8 +24,9 @@
    * `SemanticCache`: Sub-millisecond similarity caching with LRU eviction and TTL invalidation.
    * Native Pydantic Structured Outputs with schema validation.
 
-2. **Advanced RAG & Embedded Vector Persistence:**
+2. **Advanced RAG & Persistent Vector Storage:**
    * `RAGEngine`: End-to-end orchestration of chunking, vectorization, hybrid retrieval, and generation.
+   * `PostgresVectorStore`: Enterprise PostgreSQL + `pgvector` vector store with HNSW/IVFFlat indexes, JSONB `@>` metadata filtering, PostgreSQL FTS hybrid search, and `asyncpg`/`psycopg` connection pooling.
    * `SQLiteVectorStore`: ACID-compliant, single-file embedded vector store using Python's standard library `sqlite3` and FTS5 full-text indexing (no external database daemon required).
    * `InMemoryVectorStore`: High-performance pure-Python vector store with BLAS GEMV acceleration.
    * Hybrid Search: Native Okapi BM25 sparse matching fused with dense vector similarity via Reciprocal Rank Fusion (RRF).
