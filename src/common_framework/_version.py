@@ -1,3 +1,3 @@
 """Package version definition."""
 
-__version__ = "0.19.10"
+__version__ = "0.20.0"
